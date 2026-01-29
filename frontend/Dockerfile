@@ -1,25 +1,18 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.8
 
-FROM node:22-slim AS deps
+FROM node:22-slim
+
+ENV NODE_ENV=development \
+    HOST=0.0.0.0 \
+    PORT=5173
+
 WORKDIR /app
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:22-slim AS dev
-WORKDIR /app
-ENV NODE_ENV=development
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+EXPOSE 5173
+
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
-
-FROM node:22-slim AS build
-WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN npm run build
-
-FROM nginx:1.27-alpine AS prod
-COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
