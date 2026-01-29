@@ -8,6 +8,7 @@ backend/.venv/
 backend/__pycache__/
 backend/.mypy_cache/
 backend/.pytest_cache/
+backend/.env
 
 # Env files
 .env
@@ -29,3 +30,4 @@ docker-compose.override.yml
 coverage/
 *.coverage
 htmlcov/
+frontend/.env

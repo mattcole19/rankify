@@ -12,4 +12,4 @@ npm run lint       # type-check via vue-tsc
 npm run format     # Prettier source files
 ```
 
-The dev server expects a FastAPI backend on `VITE_API_BASE_URL` (defaults to `http://localhost:8000`). Update `.env` in the repo root to change this value for Docker Compose.
+Copy `frontend/.env.example` to `frontend/.env` to configure `VITE_API_BASE_URL`. Inside Docker Compose the frontend talks to `http://backend:8000`; for local development outside containers, adjust the URL to `http://localhost:8000` instead.

@@ -11,7 +11,7 @@ Rankify is a lightweight, open-source web app for ranking items within curated c
 
 ### Development Principles
 
-- One-command local setup via Docker Compose with Bun, FastAPI, and Postgres containers.
+- One-command local setup via Docker Compose with the Vite dev server, FastAPI API, and Postgres containers.
 - Prefer integration tests and realistic workflows over mocked units when practical.
 - Keep secrets out of the repo; use `.env` for local overrides and `.env.example` for documentation.
 - Ship narrow slices quickly and refine based on real usage.
@@ -19,13 +19,15 @@ Rankify is a lightweight, open-source web app for ranking items within curated c
 ### Getting Started
 
 ```bash
-cp .env.example .env       # tweak ports/DB creds if needed
-make dev                   # build and start frontend, backend, postgres
-make lint | make test      # run typed lint + unit tests
-make migrate               # run Alembic migrations (coming soon)
+cp .env.example .env                     # shared Postgres + port config
+cp backend/.env.example backend/.env     # backend-specific settings
+cp frontend/.env.example frontend/.env   # frontend-specific settings
+make dev                                 # build and start frontend, backend, postgres
+make lint | make test                    # run typed lint + unit tests
+make migrate                             # run Alembic migrations (coming soon)
 ```
 
-Both the FastAPI service and Vue app expose hot reload when launched through Docker Compose. 
+Both the FastAPI service and Vue app expose hot reload when launched through Docker Compose. Service-specific `.env` files live alongside their code so they can be managed independently of root settings.
 
 ### Tooling
 
