@@ -1,0 +1,31 @@
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python / backend
+backend/.venv/
+backend/__pycache__/
+backend/.mypy_cache/
+backend/.pytest_cache/
+
+# Env files
+.env
+.env.*
+!*.example
+
+# Editor / system
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Docker
+*.log
+docker-compose.override.yml
+
+# Coverage / reports
+coverage/
+*.coverage
+htmlcov/
