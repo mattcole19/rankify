@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm
 
-ENV UV_PROJECT_ENV=/opt/venv \
+ENV UV_PROJECT_ENV=/app/.venv \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app

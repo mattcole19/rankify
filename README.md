@@ -27,7 +27,6 @@ make lint | make test                    # run typed lint + unit tests
 make migrate                             # run Alembic migrations (coming soon)
 ```
 
-Both the FastAPI service and Vue app expose hot reload when launched through Docker Compose. Service-specific `.env` files live alongside their code so they can be managed independently of root settings.
 
 ### Tooling
 

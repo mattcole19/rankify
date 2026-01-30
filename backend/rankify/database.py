@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
-
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
