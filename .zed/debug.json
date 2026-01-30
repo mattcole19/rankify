@@ -1,0 +1,19 @@
+[
+  {
+    "label": "Backend",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "module": "uvicorn",
+    "cwd": "$ZED_WORKTREE_ROOT/rankify/backend",
+    "env": {
+      "ENVIRONMENT": "local",
+      "DATABASE_URL": "postgresql+psycopg://rankify:rankify@localhost:5432/rankify",
+      "LOG_LEVEL": "INFO",
+    },
+    "args": ["rankify.main:app"],
+    "autoReload": {
+      "enable": true,
+    },
+    "justMyCode": true,
+  },
+]

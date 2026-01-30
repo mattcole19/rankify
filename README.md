@@ -27,6 +27,26 @@ make lint | make test                    # run typed lint + unit tests
 make migrate                             # run Alembic migrations (coming soon)
 ```
 
+Both the FastAPI service and Vue app expose hot reload when launched through Docker Compose. The backend container keeps its dependencies inside an internal Docker volume (`backend-venv`), so it never touches your local `.venv`; keep using `uv sync` locally for editors/CLI tooling.
+
+### Running the backend outside Docker
+
+When you want to iterate with a debugger, run the API directly on your machine:
+
+```bash
+cd backend
+uv sync && uv sync --extra dev  # first time only
+uv run uvicorn rankify.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Or from the repo root use:
+
+```bash
+make backend-local
+```
+
+This command automatically starts `uvicorn` inside the `backend/` directory so `.env` and settings are picked up the same way they are in production.
+
 
 ### Tooling
 

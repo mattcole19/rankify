@@ -34,3 +34,6 @@ test:
 fmt:
 	$(DOCKER_COMPOSE) run --rm frontend npm run format
 	$(DOCKER_COMPOSE) run --rm backend uv run ruff format
+
+backend-local:
+	cd backend && uv run uvicorn rankify.main:app --host 0.0.0.0 --port $${BACKEND_PORT:-8000} --reload
