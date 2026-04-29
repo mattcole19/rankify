@@ -2,9 +2,9 @@
 
 FROM node:22-slim
 
-ENV NODE_ENV=development \
+ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=5173
+    PORT=4173
 
 WORKDIR /app
 
@@ -13,6 +13,8 @@ RUN npm ci
 
 COPY . .
 
-EXPOSE 5173
+RUN npm run build
 
-CMD ["sh", "-c", "npm run dev -- --host 0.0.0.0 --port ${PORT:-5173}"]
+EXPOSE 4173
+
+CMD ["sh", "-c", "npm run preview -- --host 0.0.0.0 --port ${PORT:-4173}"]
