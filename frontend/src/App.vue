@@ -60,8 +60,9 @@ const fetchCategories = async () => {
     const payload = (await response.json()) as CategorySummary[]
     categories.value = payload
 
-    if (payload.length > 0) {
-      await selectCategory(payload[0].slug)
+    const firstCategory = payload[0]
+    if (firstCategory) {
+      await selectCategory(firstCategory.slug)
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Unknown error'
@@ -94,6 +95,9 @@ const moveItem = (index: number, direction: -1 | 1) => {
 
   const cloned = [...rankingItems.value]
   const [target] = cloned.splice(index, 1)
+  if (!target) {
+    return
+  }
   cloned.splice(nextIndex, 0, target)
   rankingItems.value = cloned
 }

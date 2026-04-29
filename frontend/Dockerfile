@@ -1,20 +1,27 @@
 # syntax=docker/dockerfile:1.8
 
-FROM node:22-slim
+FROM node:lts-alpine AS build
 
-ENV NODE_ENV=production \
-    HOST=0.0.0.0 \
-    PORT=4173
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false \
+    NPM_CONFIG_FUND=false
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY . .
-
+COPY . ./
 RUN npm run build
 
-EXPOSE 4173
+FROM caddy:2-alpine
 
-CMD ["sh", "-c", "npm run preview -- --host 0.0.0.0 --port ${PORT:-4173}"]
+WORKDIR /app
+
+COPY Caddyfile ./
+RUN caddy fmt Caddyfile --overwrite
+
+COPY --from=build /app/dist ./dist
+
+EXPOSE 3000
+
+CMD ["caddy", "run", "--config", "Caddyfile", "--adapter", "caddyfile"]
