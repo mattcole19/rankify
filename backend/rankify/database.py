@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -35,6 +37,11 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     if session_factory is None:
         raise RuntimeError('Session factory is not initialized yet')
     return session_factory
+
+
+async def get_db_session() -> AsyncIterator[AsyncSession]:
+    async with get_session_factory()() as session:
+        yield session
 
 
 async def ping_database() -> bool:

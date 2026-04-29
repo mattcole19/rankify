@@ -78,6 +78,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 button {
@@ -88,6 +89,11 @@ button {
   font-weight: 600;
   cursor: pointer;
   transition: transform 180ms ease, box-shadow 200ms ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 button:focus-visible {
@@ -109,6 +115,68 @@ button:focus-visible {
   background: transparent;
   color: var(--ink);
   border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.small {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+}
+
+.select {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(5, 8, 22, 0.75);
+  color: var(--ink);
+  font: inherit;
+  padding: 0.75rem 0.95rem;
+}
+
+.error {
+  margin: 0.9rem 0 0;
+  color: #ffc4c7;
+}
+
+.rank-list {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.rank-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 0.75rem;
+}
+
+.rank-position {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.rank-name {
+  margin: 0;
+  font-weight: 600;
+}
+
+.rank-actions {
+  display: flex;
+  gap: 0.4rem;
 }
 
 .panel {
@@ -144,6 +212,24 @@ button:focus-visible {
 .panel-meta span {
   color: var(--ink);
   font-weight: 600;
+}
+
+.community-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.community-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted);
+}
+
+.community-list li span:first-child {
+  color: var(--ink);
 }
 
 code {

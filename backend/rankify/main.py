@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from rankify.config import Settings, get_settings
 from rankify.database import create_engine, dispose_engine
 from rankify.logging import configure_logging
+from rankify.routes.categories import router as categories_router
 from rankify.routes.health import router as health_router
+from rankify.routes.rankings import router as rankings_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -32,6 +34,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=False,
     )
     app.include_router(health_router)
+    app.include_router(categories_router)
+    app.include_router(rankings_router)
     return app
 
 
