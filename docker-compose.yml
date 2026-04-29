@@ -14,6 +14,8 @@ services:
       context: ./backend
     env_file:
       - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-rankify}:${POSTGRES_PASSWORD:-rankify}@db:5432/${POSTGRES_DB:-rankify}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -25,11 +27,16 @@ services:
   frontend:
     build:
       context: ./frontend
+      target: dev
     env_file:
       - ./frontend/.env
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
 
 volumes:
   db-data:
   backend-venv:
+  frontend-node-modules:
