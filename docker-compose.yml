@@ -27,11 +27,16 @@ services:
   frontend:
     build:
       context: ./frontend
+      target: dev
     env_file:
       - ./frontend/.env
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
 
 volumes:
   db-data:
   backend-venv:
+  frontend-node-modules:
