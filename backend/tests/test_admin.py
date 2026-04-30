@@ -57,3 +57,55 @@ async def test_create_category_rejects_duplicate_slug(test_client, seeded_catego
 
     assert response.status_code == 409
     assert response.json()['detail'] == 'Category slug already exists'
+
+
+@pytest.mark.asyncio()
+async def test_add_items_to_category_appends_display_order(test_client, seeded_category):
+    response = await test_client.post(
+        f'/admin/categories/{seeded_category["id"]}/items',
+        headers={'x-admin-secret': 'test-admin-secret'},
+        json={'items': ['Skittles', 'Twix']},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert len(payload) == 2
+    assert payload[0]['name'] == 'Skittles'
+    assert payload[0]['display_order'] == 3
+    assert payload[1]['name'] == 'Twix'
+    assert payload[1]['display_order'] == 4
+
+
+@pytest.mark.asyncio()
+async def test_add_items_requires_admin_secret(test_client, seeded_category):
+    response = await test_client.post(
+        f'/admin/categories/{seeded_category["id"]}/items',
+        json={'items': ['Skittles']},
+    )
+
+    assert response.status_code == 401
+    assert response.json()['detail'] == 'Missing admin secret'
+
+
+@pytest.mark.asyncio()
+async def test_add_items_requires_existing_category(test_client):
+    response = await test_client.post(
+        '/admin/categories/99999/items',
+        headers={'x-admin-secret': 'test-admin-secret'},
+        json={'items': ['Skittles']},
+    )
+
+    assert response.status_code == 404
+    assert response.json()['detail'] == 'Category not found'
+
+
+@pytest.mark.asyncio()
+async def test_add_items_rejects_existing_item_names_case_insensitive(test_client, seeded_category):
+    response = await test_client.post(
+        f'/admin/categories/{seeded_category["id"]}/items',
+        headers={'x-admin-secret': 'test-admin-secret'},
+        json={'items': ['sour worms']},
+    )
+
+    assert response.status_code == 409
+    assert response.json()['detail'] == 'Items already exist in category: sour worms'

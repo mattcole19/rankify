@@ -86,3 +86,17 @@ class AdminCategoryResponse(BaseModel):
     slug: str
     name: str
     description: str | None
+
+
+class AdminAddCategoryItemsRequest(BaseModel):
+    items: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator('items')
+    @classmethod
+    def _validate_items(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value]
+        if any(not item for item in cleaned):
+            raise ValueError('item names must not be empty')
+        if len({item.lower() for item in cleaned}) != len(cleaned):
+            raise ValueError('item names must be unique within the request')
+        return cleaned
