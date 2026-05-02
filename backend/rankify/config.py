@@ -16,6 +16,9 @@ class Settings(BaseSettings):
         'http://localhost:5173'
     ]
     admin_secret: Annotated[str | None, Field(alias='ADMIN_SECRET')] = None  # Temporary
+    supabase_url: Annotated[str | None, Field(alias='SUPABASE_URL')] = None
+    supabase_anon_key: Annotated[str | None, Field(alias='SUPABASE_ANON_KEY')] = None
+    admin_emails: Annotated[list[str], Field(alias='ADMIN_EMAILS')] = []
 
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
@@ -34,6 +37,13 @@ class Settings(BaseSettings):
         if value.startswith('postgresql://') and '+psycopg' not in value.split('://', 1)[0]:
             return value.replace('postgresql://', 'postgresql+psycopg://', 1)
         return value
+
+    @field_validator('admin_emails', mode='before')
+    @classmethod
+    def _split_admin_emails(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, list):
+            return [email.strip().lower() for email in value if email.strip()]
+        return [email.strip().lower() for email in value.split(',') if email.strip()]
 
 
 @lru_cache

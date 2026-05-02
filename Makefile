@@ -24,12 +24,12 @@ reset:
 	$(DOCKER_COMPOSE) run --rm backend uv run python -m rankify.seed
 
 lint:
-	$(DOCKER_COMPOSE) run --rm frontend npm run lint
+	$(DOCKER_COMPOSE) run --rm frontend sh -c "npm install && npm run lint"
 	$(DOCKER_COMPOSE) run --rm backend uv sync --extra dev
 	$(DOCKER_COMPOSE) run --rm backend uv run ruff check
 
 test:
-	$(DOCKER_COMPOSE) run --rm frontend npm run test
+	$(DOCKER_COMPOSE) run --rm frontend sh -c "npm install && npm run test"
 	$(DOCKER_COMPOSE) run --rm backend uv sync --extra dev
 	$(DOCKER_COMPOSE) run --rm backend uv run pytest
 
@@ -39,9 +39,9 @@ fmt:
 
 verify:
 	$(DOCKER_COMPOSE) build
-	$(DOCKER_COMPOSE) run --rm frontend npm run lint
-	$(DOCKER_COMPOSE) run --rm frontend npm run test
-	$(DOCKER_COMPOSE) run --rm frontend npm run build
+	$(DOCKER_COMPOSE) run --rm frontend sh -c "npm install && npm run lint"
+	$(DOCKER_COMPOSE) run --rm frontend sh -c "npm install && npm run test"
+	$(DOCKER_COMPOSE) run --rm frontend sh -c "npm install && npm run build"
 	$(DOCKER_COMPOSE) run --rm backend uv sync --extra dev
 	$(DOCKER_COMPOSE) run --rm backend uv run ruff check
 	$(DOCKER_COMPOSE) run --rm backend uv run pytest
