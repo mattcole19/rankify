@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { createClient, type AuthChangeEvent, type Session } from '@supabase/supabase-js'
 
 type CategorySummary = {
   id: number
@@ -39,6 +40,10 @@ type CommunityRanking = {
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const initialAdminSecret = import.meta.env.VITE_ADMIN_SECRET ?? ''
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabaseClient =
+  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
 const isAdminView = window.location.pathname.startsWith('/admin')
 const loading = ref(false)
 const submitting = ref(false)
@@ -59,8 +64,14 @@ const newCategorySlug = ref('')
 const newCategoryDescription = ref('')
 const itemCategoryId = ref<number | null>(null)
 const newItemsText = ref('')
+const adminSession = ref<Session | null>(null)
+const adminAuthLoading = ref(false)
 
 const canSubmit = computed(() => category.value !== null && rankingItems.value.length > 1)
+const hasAdminToken = computed(() => Boolean(adminSession.value?.access_token))
+const hasAdminAccess = computed(
+  () => hasAdminToken.value || adminSecret.value.trim().length > 0,
+)
 
 const shuffleItems = (items: CategoryItem[]) => {
   const shuffled = [...items]
@@ -129,15 +140,60 @@ const fetchCategories = async () => {
   }
 }
 
-const getAdminHeaders = () => {
-  const secret = adminSecret.value.trim()
-  if (!secret) {
-    throw new Error('Admin secret is required')
+const initializeAdminSession = async () => {
+  if (!supabaseClient || !isAdminView) {
+    return
   }
-  return {
+  adminAuthLoading.value = true
+  const {
+    data: { session },
+  } = await supabaseClient.auth.getSession()
+  adminSession.value = session
+  supabaseClient.auth.onAuthStateChange((_event: AuthChangeEvent, sessionState: Session | null) => {
+    adminSession.value = sessionState
+  })
+  adminAuthLoading.value = false
+}
+
+const signInWithGoogle = async () => {
+  if (!supabaseClient) {
+    adminError.value = 'Supabase auth is not configured in frontend environment'
+    return
+  }
+  adminError.value = null
+  await supabaseClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/admin`,
+    },
+  })
+}
+
+const signOutAdmin = async () => {
+  if (!supabaseClient) {
+    return
+  }
+  await supabaseClient.auth.signOut()
+}
+
+const getAdminHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Admin-Secret': secret,
   }
+
+  const token = adminSession.value?.access_token
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+    return headers
+  }
+
+  const secret = adminSecret.value.trim()
+  if (secret) {
+    headers['X-Admin-Secret'] = secret
+    return headers
+  }
+
+  throw new Error('Sign in with Google or provide an admin secret')
 }
 
 const createCategory = async () => {
@@ -333,7 +389,9 @@ const submitRanking = async () => {
   }
 }
 
-onMounted(fetchCategories)
+onMounted(async () => {
+  await Promise.all([fetchCategories(), initializeAdminSession()])
+})
 </script>
 
 <template>
@@ -410,7 +468,19 @@ onMounted(fetchCategories)
     <section class="panel admin-panel" aria-live="polite" v-if="isAdminView">
       <p class="panel-label">admin tools</p>
       <h2>Create Categories and Items</h2>
-      <p class="panel-detail">Temporary admin flow. Replace with real auth later.</p>
+      <p class="panel-detail">Sign in with Google to manage categories and items.</p>
+
+      <div class="admin-auth-row">
+        <button class="cta" type="button" :disabled="adminAuthLoading || hasAdminToken" @click="signInWithGoogle">
+          {{ hasAdminToken ? 'Signed in with Google' : 'Sign in with Google' }}
+        </button>
+        <button class="secondary" type="button" :disabled="!hasAdminToken" @click="signOutAdmin">
+          Sign out
+        </button>
+      </div>
+
+      <p class="panel-detail" v-if="hasAdminToken">Authenticated as {{ adminSession?.user?.email }}</p>
+      <p class="panel-detail">Fallback local-only option:</p>
 
       <label class="field-label" for="admin-secret">Admin Secret</label>
       <input id="admin-secret" v-model="adminSecret" class="text-input" type="password" />
@@ -432,7 +502,7 @@ onMounted(fetchCategories)
             rows="3"
           />
 
-          <button class="secondary" :disabled="creatingCategory" @click="createCategory">
+          <button class="secondary" :disabled="creatingCategory || !hasAdminAccess" @click="createCategory">
             {{ creatingCategory ? 'Creating…' : 'Create Category' }}
           </button>
         </article>
@@ -449,7 +519,7 @@ onMounted(fetchCategories)
           <label class="field-label" for="new-items">Items (comma or newline separated)</label>
           <textarea id="new-items" v-model="newItemsText" class="text-input" rows="5" />
 
-          <button class="secondary" :disabled="addingItems" @click="addItemsToCategory">
+          <button class="secondary" :disabled="addingItems || !hasAdminAccess" @click="addItemsToCategory">
             {{ addingItems ? 'Adding…' : 'Add Items' }}
           </button>
         </article>

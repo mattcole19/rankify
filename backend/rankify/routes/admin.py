@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from hmac import compare_digest
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rankify.auth import require_admin_access
 from rankify.database import get_db_session
 from rankify.db.models import Category, Item
 from rankify.schemas import (
@@ -20,27 +20,11 @@ from rankify.schemas import (
 router = APIRouter(prefix='/admin', tags=['admin'])
 
 
-def require_admin_secret(
-    request: Request,
-    x_admin_secret: Annotated[str | None, Header()] = None,
-) -> None:
-    expected_secret = request.app.state.settings.admin_secret
-    if not expected_secret:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail='Admin routes are not configured',
-        )
-    if x_admin_secret is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Missing admin secret')
-    if not compare_digest(x_admin_secret, expected_secret):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Invalid admin secret')
-
-
 @router.post(
     '/categories',
     response_model=AdminCategoryResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin_secret)],
+    dependencies=[Depends(require_admin_access)],
 )
 async def create_category(
     payload: AdminCreateCategoryRequest,
@@ -69,7 +53,7 @@ async def create_category(
     '/categories/{category_id}/items',
     response_model=list[ItemOut],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin_secret)],
+    dependencies=[Depends(require_admin_access)],
 )
 async def add_category_items(
     category_id: int,

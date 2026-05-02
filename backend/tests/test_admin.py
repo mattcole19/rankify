@@ -9,7 +9,7 @@ async def test_create_category_requires_admin_secret(test_client):
     )
 
     assert response.status_code == 401
-    assert response.json()['detail'] == 'Missing admin secret'
+    assert response.json()['detail'] == 'Missing admin authentication (bearer token or admin secret)'
 
 
 @pytest.mark.asyncio()
@@ -84,7 +84,7 @@ async def test_add_items_requires_admin_secret(test_client, seeded_category):
     )
 
     assert response.status_code == 401
-    assert response.json()['detail'] == 'Missing admin secret'
+    assert response.json()['detail'] == 'Missing admin authentication (bearer token or admin secret)'
 
 
 @pytest.mark.asyncio()
