@@ -3,8 +3,16 @@ import userEvent from '@testing-library/user-event'
 import App from '@/App.vue'
 
 describe('App', () => {
+  let rankingRequestBody: Record<string, unknown> | null = null
+
   beforeEach(() => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+    rankingRequestBody = null
+    if (typeof window.localStorage.removeItem === 'function') {
+      window.localStorage.removeItem('rankify_anon_id')
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
 
       if (url.endsWith('/categories')) {
@@ -35,6 +43,7 @@ describe('App', () => {
       }
 
       if (url.endsWith('/rankings')) {
+        rankingRequestBody = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
         return {
           ok: true,
           status: 201,
@@ -64,7 +73,8 @@ describe('App', () => {
         status: 404,
         json: async () => ({}),
       } as Response
-    })
+      },
+    )
   })
 
   afterEach(() => {
@@ -86,5 +96,7 @@ describe('App', () => {
       expect(screen.getByText(/1 total submissions/i)).toBeInTheDocument()
       expect(screen.getByText(/avg #1.00/i)).toBeInTheDocument()
     })
+
+    expect(rankingRequestBody?.anon_id).toEqual(expect.any(String))
   })
 })

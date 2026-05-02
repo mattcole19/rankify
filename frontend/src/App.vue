@@ -44,6 +44,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const supabaseClient =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
+const anonStorageKey = 'rankify_anon_id'
 const isAdminView = window.location.pathname.startsWith('/admin')
 const loading = ref(false)
 const submitting = ref(false)
@@ -66,6 +67,7 @@ const itemCategoryId = ref<number | null>(null)
 const newItemsText = ref('')
 const adminSession = ref<Session | null>(null)
 const adminAuthLoading = ref(false)
+const anonId = ref<string>('')
 
 const canSubmit = computed(() => category.value !== null && rankingItems.value.length > 1)
 const hasAdminToken = computed(() => Boolean(adminSession.value?.access_token))
@@ -113,6 +115,41 @@ const formatApiError = (payload: unknown, fallback: string): string => {
     }
   }
   return fallback
+}
+
+const createAnonId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `anon-${Math.random().toString(36).slice(2)}-${Date.now()}`
+}
+
+const getLocalStorage = (): Storage | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  const storage = window.localStorage
+  if (!storage) {
+    return null
+  }
+  if (typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+    return null
+  }
+  return storage
+}
+
+const getOrCreateAnonId = (): string => {
+  const storage = getLocalStorage()
+  if (!storage) {
+    return createAnonId()
+  }
+  const existing = storage.getItem(anonStorageKey)
+  if (existing) {
+    return existing
+  }
+  const generated = createAnonId()
+  storage.setItem(anonStorageKey, generated)
+  return generated
 }
 
 const fetchCategories = async () => {
@@ -374,6 +411,7 @@ const submitRanking = async () => {
       body: JSON.stringify({
         category_id: category.value.id,
         ordered_item_ids: rankingItems.value.map((item) => item.id),
+        anon_id: anonId.value,
       }),
     })
 
@@ -390,6 +428,7 @@ const submitRanking = async () => {
 }
 
 onMounted(async () => {
+  anonId.value = getOrCreateAnonId()
   await Promise.all([fetchCategories(), initializeAdminSession()])
 })
 </script>

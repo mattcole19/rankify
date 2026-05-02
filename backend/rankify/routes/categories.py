@@ -28,6 +28,7 @@ async def list_categories(
         select(Category.id, Category.slug, Category.name, func.count(Item.id).label('item_count'))
         .outerjoin(Item, Item.category_id == Category.id)
         .group_by(Category.id)
+        .having(func.count(Item.id) > 1)
         .order_by(Category.name.asc())
     )
     rows = (await session.execute(query)).all()
