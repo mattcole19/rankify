@@ -23,6 +23,7 @@ def settings(tmp_path) -> Settings:
     test_db = tmp_path / 'test.db'
     os.environ['DATABASE_URL'] = f'sqlite+aiosqlite:///{test_db}'
     os.environ['ENVIRONMENT'] = 'test'
+    os.environ['ADMIN_SECRET'] = 'test-admin-secret'
     reset_settings_cache()
     return Settings()
 

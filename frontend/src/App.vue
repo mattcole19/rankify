@@ -38,6 +38,8 @@ type CommunityRanking = {
 }
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+const initialAdminSecret = import.meta.env.VITE_ADMIN_SECRET ?? ''
+const isAdminView = window.location.pathname.startsWith('/admin')
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref<string | null>(null)
@@ -46,8 +48,45 @@ const selectedSlug = ref<string | null>(null)
 const category = ref<CategoryDetail | null>(null)
 const rankingItems = ref<CategoryItem[]>([])
 const communityRanking = ref<CommunityRanking | null>(null)
+const adminSecret = ref(initialAdminSecret)
+const adminError = ref<string | null>(null)
+const adminMessage = ref<string | null>(null)
+const creatingCategory = ref(false)
+const addingItems = ref(false)
+const newCategoryName = ref('')
+const newCategorySlug = ref('')
+const newCategoryDescription = ref('')
+const itemCategoryId = ref<number | null>(null)
+const newItemsText = ref('')
 
 const canSubmit = computed(() => category.value !== null && rankingItems.value.length > 1)
+
+const formatApiError = (payload: unknown, fallback: string): string => {
+  if (payload && typeof payload === 'object' && 'detail' in payload) {
+    const detail = (payload as { detail?: unknown }).detail
+    if (typeof detail === 'string') {
+      return detail
+    }
+    if (Array.isArray(detail)) {
+      return detail
+        .map((entry) => {
+          if (typeof entry === 'string') {
+            return entry
+          }
+          if (entry && typeof entry === 'object' && 'msg' in entry) {
+            const msg = (entry as { msg?: unknown }).msg
+            return typeof msg === 'string' ? msg : JSON.stringify(entry)
+          }
+          return JSON.stringify(entry)
+        })
+        .join(', ')
+    }
+    if (detail && typeof detail === 'object') {
+      return JSON.stringify(detail)
+    }
+  }
+  return fallback
+}
 
 const fetchCategories = async () => {
   loading.value = true
@@ -60,6 +99,10 @@ const fetchCategories = async () => {
     const payload = (await response.json()) as CategorySummary[]
     categories.value = payload
 
+    if (payload.length > 0 && itemCategoryId.value === null) {
+      itemCategoryId.value = payload[0].id
+    }
+
     const firstCategory = payload[0]
     if (firstCategory) {
       await selectCategory(firstCategory.slug)
@@ -68,6 +111,111 @@ const fetchCategories = async () => {
     error.value = err instanceof Error ? err.message : 'Unknown error'
   } finally {
     loading.value = false
+  }
+}
+
+const getAdminHeaders = () => {
+  const secret = adminSecret.value.trim()
+  if (!secret) {
+    throw new Error('Admin secret is required')
+  }
+  return {
+    'Content-Type': 'application/json',
+    'X-Admin-Secret': secret,
+  }
+}
+
+const createCategory = async () => {
+  const name = newCategoryName.value.trim()
+  const slug = newCategorySlug.value.trim()
+  const description = newCategoryDescription.value.trim()
+  if (!name || !slug) {
+    adminError.value = 'Category name and slug are required'
+    return
+  }
+
+  creatingCategory.value = true
+  adminError.value = null
+  adminMessage.value = null
+  try {
+    const response = await fetch(`${apiBase}/admin/categories`, {
+      method: 'POST',
+      headers: getAdminHeaders(),
+      body: JSON.stringify({
+        name,
+        slug,
+        description: description.length > 0 ? description : null,
+      }),
+    })
+
+    const payload = (await response.json()) as { id?: number; slug?: string; detail?: unknown }
+    if (!response.ok) {
+      throw new Error(formatApiError(payload, `Could not create category (${response.status})`))
+    }
+
+    adminMessage.value = `Created category: ${payload.slug}`
+    newCategoryName.value = ''
+    newCategorySlug.value = ''
+    newCategoryDescription.value = ''
+    await fetchCategories()
+
+    if (payload.slug) {
+      await selectCategory(payload.slug)
+    }
+    if (payload.id) {
+      itemCategoryId.value = payload.id
+    }
+  } catch (err) {
+    adminError.value = err instanceof Error ? err.message : 'Unknown error'
+  } finally {
+    creatingCategory.value = false
+  }
+}
+
+const addItemsToCategory = async () => {
+  if (!itemCategoryId.value) {
+    adminError.value = 'Choose a category first'
+    return
+  }
+
+  const items = newItemsText.value
+    .split(/\n|,/) 
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+
+  if (items.length === 0) {
+    adminError.value = 'Enter at least one item'
+    return
+  }
+
+  addingItems.value = true
+  adminError.value = null
+  adminMessage.value = null
+  try {
+    const response = await fetch(`${apiBase}/admin/categories/${itemCategoryId.value}/items`, {
+      method: 'POST',
+      headers: getAdminHeaders(),
+      body: JSON.stringify({ items }),
+    })
+
+    const payload = (await response.json()) as
+      | { detail?: unknown }
+      | Array<{ id: number; name: string }>
+    if (!response.ok) {
+      throw new Error(formatApiError(payload, `Could not add items (${response.status})`))
+    }
+
+    adminMessage.value = `Added ${items.length} item${items.length === 1 ? '' : 's'}`
+    newItemsText.value = ''
+    await fetchCategories()
+
+    if (category.value && category.value.id === itemCategoryId.value && selectedSlug.value) {
+      await selectCategory(selectedSlug.value)
+    }
+  } catch (err) {
+    adminError.value = err instanceof Error ? err.message : 'Unknown error'
+  } finally {
+    addingItems.value = false
   }
 }
 
@@ -149,7 +297,7 @@ onMounted(fetchCategories)
 
 <template>
   <main class="shell">
-    <section class="hero">
+    <section class="hero" v-if="!isAdminView">
       <p class="eyebrow">Rankify MVP</p>
       <h1>Rank fast. Compare with everyone.</h1>
       <p class="lede">Choose a category, reorder items, submit, and instantly view the community ranking.</p>
@@ -193,7 +341,7 @@ onMounted(fetchCategories)
       </div>
     </section>
 
-    <section class="panel" aria-live="polite" v-if="communityRanking">
+    <section class="panel" aria-live="polite" v-if="communityRanking && !isAdminView">
       <p class="panel-label">community ranking</p>
       <h2>{{ category?.name }}</h2>
       <p class="panel-detail">{{ communityRanking.total_submissions }} total submissions</p>
@@ -204,6 +352,58 @@ onMounted(fetchCategories)
           <span v-else>not ranked yet</span>
         </li>
       </ol>
+    </section>
+
+    <section class="panel admin-panel" aria-live="polite" v-if="isAdminView">
+      <p class="panel-label">admin tools</p>
+      <h2>Create Categories and Items</h2>
+      <p class="panel-detail">Temporary admin flow. Replace with real auth later.</p>
+
+      <label class="field-label" for="admin-secret">Admin Secret</label>
+      <input id="admin-secret" v-model="adminSecret" class="text-input" type="password" />
+
+      <div class="admin-grid">
+        <article class="admin-card">
+          <h3>Create Category</h3>
+          <label class="field-label" for="new-category-name">Name</label>
+          <input id="new-category-name" v-model="newCategoryName" class="text-input" type="text" />
+
+          <label class="field-label" for="new-category-slug">Slug</label>
+          <input id="new-category-slug" v-model="newCategorySlug" class="text-input" type="text" />
+
+          <label class="field-label" for="new-category-description">Description</label>
+          <textarea
+            id="new-category-description"
+            v-model="newCategoryDescription"
+            class="text-input"
+            rows="3"
+          />
+
+          <button class="secondary" :disabled="creatingCategory" @click="createCategory">
+            {{ creatingCategory ? 'Creating…' : 'Create Category' }}
+          </button>
+        </article>
+
+        <article class="admin-card">
+          <h3>Add Items</h3>
+          <label class="field-label" for="item-category-select">Category</label>
+          <select id="item-category-select" v-model.number="itemCategoryId" class="select">
+            <option v-for="entry in categories" :key="entry.id" :value="entry.id">
+              {{ entry.name }}
+            </option>
+          </select>
+
+          <label class="field-label" for="new-items">Items (comma or newline separated)</label>
+          <textarea id="new-items" v-model="newItemsText" class="text-input" rows="5" />
+
+          <button class="secondary" :disabled="addingItems" @click="addItemsToCategory">
+            {{ addingItems ? 'Adding…' : 'Add Items' }}
+          </button>
+        </article>
+      </div>
+
+      <p v-if="adminError" class="error">{{ adminError }}</p>
+      <p v-if="adminMessage" class="admin-success">{{ adminMessage }}</p>
     </section>
   </main>
 </template>

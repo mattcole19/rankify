@@ -29,6 +29,11 @@ make migrate                             # run Alembic migrations (coming soon)
 
 Both the FastAPI service and Vue app expose hot reload when launched through Docker Compose. The backend container keeps its dependencies inside an internal Docker volume (`backend-venv`), so it never touches your local `.venv`; keep using `uv sync` locally for editors/CLI tooling.
 
+Frontend local/prod behavior is split via Dockerfile targets:
+
+- `dev` target runs the Vite dev server for Docker Compose hot reload.
+- production image builds static assets and serves them with Caddy for Railway.
+
 ### Running the backend outside Docker
 
 When you want to iterate with a debugger, run the API directly on your machine:

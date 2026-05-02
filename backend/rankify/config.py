@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     cors_allow_origins: Annotated[list[str], Field(alias='CORS_ALLOW_ORIGINS')] = [
         'http://localhost:5173'
     ]
+    admin_secret: Annotated[str | None, Field(alias='ADMIN_SECRET')] = None  # Temporary
 
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+SLUG_PATTERN = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
 
 
 class ItemOut(BaseModel):
@@ -57,3 +61,42 @@ class CommunityRankingResponse(BaseModel):
     category_slug: str
     total_submissions: int
     items: list[CommunityRankingItem]
+
+
+class AdminCreateCategoryRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    slug: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2_000)
+
+    @field_validator('name', 'slug', mode='before')
+    @classmethod
+    def _trim_required_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator('slug')
+    @classmethod
+    def _validate_slug_format(cls, value: str) -> str:
+        if not SLUG_PATTERN.fullmatch(value):
+            raise ValueError('slug must be lowercase letters, numbers, and dashes only')
+        return value
+
+
+class AdminCategoryResponse(BaseModel):
+    id: int
+    slug: str
+    name: str
+    description: str | None
+
+
+class AdminAddCategoryItemsRequest(BaseModel):
+    items: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator('items')
+    @classmethod
+    def _validate_items(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value]
+        if any(not item for item in cleaned):
+            raise ValueError('item names must not be empty')
+        if len({item.lower() for item in cleaned}) != len(cleaned):
+            raise ValueError('item names must be unique within the request')
+        return cleaned
