@@ -1,6 +1,6 @@
 DOCKER_COMPOSE ?= docker compose
 
-.PHONY: dev down logs migrate seed reset lint test fmt
+.PHONY: dev down logs migrate seed reset lint test fmt verify backend-dev-deps
 
 dev:
 	$(DOCKER_COMPOSE) up --build
@@ -25,15 +25,26 @@ reset:
 
 lint:
 	$(DOCKER_COMPOSE) run --rm frontend npm run lint
+	$(DOCKER_COMPOSE) run --rm backend uv sync --extra dev
 	$(DOCKER_COMPOSE) run --rm backend uv run ruff check
 
 test:
 	$(DOCKER_COMPOSE) run --rm frontend npm run test
+	$(DOCKER_COMPOSE) run --rm backend uv sync --extra dev
 	$(DOCKER_COMPOSE) run --rm backend uv run pytest
 
 fmt:
 	$(DOCKER_COMPOSE) run --rm frontend npm run format
 	$(DOCKER_COMPOSE) run --rm backend uv run ruff format
+
+verify:
+	$(DOCKER_COMPOSE) build
+	$(DOCKER_COMPOSE) run --rm frontend npm run lint
+	$(DOCKER_COMPOSE) run --rm frontend npm run test
+	$(DOCKER_COMPOSE) run --rm frontend npm run build
+	$(DOCKER_COMPOSE) run --rm backend uv sync --extra dev
+	$(DOCKER_COMPOSE) run --rm backend uv run ruff check
+	$(DOCKER_COMPOSE) run --rm backend uv run pytest
 
 backend-local:
 	cd backend && uv run uvicorn rankify.main:app --host 0.0.0.0 --port $${BACKEND_PORT:-8000} --reload
