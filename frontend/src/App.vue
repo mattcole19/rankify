@@ -99,11 +99,10 @@ const fetchCategories = async () => {
     const payload = (await response.json()) as CategorySummary[]
     categories.value = payload
 
-    if (payload.length > 0 && itemCategoryId.value === null) {
-      itemCategoryId.value = payload[0].id
-    }
-
     const firstCategory = payload[0]
+    if (firstCategory && itemCategoryId.value === null) {
+      itemCategoryId.value = firstCategory.id
+    }
     if (firstCategory) {
       await selectCategory(firstCategory.slug)
     }
