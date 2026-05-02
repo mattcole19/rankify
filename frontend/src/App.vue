@@ -48,6 +48,7 @@ const selectedSlug = ref<string | null>(null)
 const category = ref<CategoryDetail | null>(null)
 const rankingItems = ref<CategoryItem[]>([])
 const communityRanking = ref<CommunityRanking | null>(null)
+const draggedIndex = ref<number | null>(null)
 const adminSecret = ref(initialAdminSecret)
 const adminError = ref<string | null>(null)
 const adminMessage = ref<string | null>(null)
@@ -60,6 +61,21 @@ const itemCategoryId = ref<number | null>(null)
 const newItemsText = ref('')
 
 const canSubmit = computed(() => category.value !== null && rankingItems.value.length > 1)
+
+const shuffleItems = (items: CategoryItem[]) => {
+  const shuffled = [...items]
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const current = shuffled[i]
+    const swapTarget = shuffled[j]
+    if (!current || !swapTarget) {
+      continue
+    }
+    shuffled[i] = swapTarget
+    shuffled[j] = current
+  }
+  return shuffled
+}
 
 const formatApiError = (payload: unknown, fallback: string): string => {
   if (payload && typeof payload === 'object' && 'detail' in payload) {
@@ -231,7 +247,8 @@ const selectCategory = async (slug: string) => {
 
   const payload = (await response.json()) as CategoryDetail
   category.value = payload
-  rankingItems.value = [...payload.items].sort((a, b) => a.display_order - b.display_order)
+  const canonicalOrder = [...payload.items].sort((a, b) => a.display_order - b.display_order)
+  rankingItems.value = shuffleItems(canonicalOrder)
 }
 
 const moveItem = (index: number, direction: -1 | 1) => {
@@ -247,6 +264,31 @@ const moveItem = (index: number, direction: -1 | 1) => {
   }
   cloned.splice(nextIndex, 0, target)
   rankingItems.value = cloned
+}
+
+const handleDragStart = (index: number) => {
+  draggedIndex.value = index
+}
+
+const handleDrop = (targetIndex: number) => {
+  const sourceIndex = draggedIndex.value
+  draggedIndex.value = null
+
+  if (sourceIndex === null || sourceIndex === targetIndex) {
+    return
+  }
+
+  const cloned = [...rankingItems.value]
+  const [moved] = cloned.splice(sourceIndex, 1)
+  if (!moved) {
+    return
+  }
+  cloned.splice(targetIndex, 0, moved)
+  rankingItems.value = cloned
+}
+
+const handleDragEnd = () => {
+  draggedIndex.value = null
 }
 
 const loadCommunityRanking = async () => {
@@ -317,11 +359,23 @@ onMounted(fetchCategories)
       <p v-if="error" class="error">{{ error }}</p>
 
       <div v-if="rankingItems.length > 0" class="rank-list">
-        <article v-for="(item, index) in rankingItems" :key="item.id" class="rank-item">
+        <article
+          v-for="(item, index) in rankingItems"
+          :key="item.id"
+          class="rank-item"
+          :class="{ dragging: draggedIndex === index }"
+          draggable="true"
+          @dragstart="handleDragStart(index)"
+          @dragover.prevent
+          @drop="handleDrop(index)"
+          @dragend="handleDragEnd"
+        >
           <p class="rank-position">#{{ index + 1 }}</p>
           <p class="rank-name">{{ item.name }}</p>
           <div class="rank-actions">
-            <button class="secondary small" :disabled="index === 0" @click="moveItem(index, -1)">Up</button>
+            <button class="secondary small" :disabled="index === 0" @click="moveItem(index, -1)">
+              Up
+            </button>
             <button
               class="secondary small"
               :disabled="index === rankingItems.length - 1"

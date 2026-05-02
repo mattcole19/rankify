@@ -198,6 +198,11 @@ button:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   padding: 0.75rem;
+  cursor: grab;
+}
+
+.rank-item.dragging {
+  opacity: 0.55;
 }
 
 .rank-position {
