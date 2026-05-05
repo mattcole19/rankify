@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rankify.database import get_db_session
@@ -41,19 +40,21 @@ async def submit_ranking(
             status_code=400, detail='ranking must include every item in the category'
         )
 
-    anon_id = payload.anon_id or uuid4().hex
-    submission = await session.scalar(
+    existing_submission = await session.scalar(
         select(RankingSubmission).where(
             RankingSubmission.category_id == payload.category_id,
-            RankingSubmission.anon_id == anon_id,
+            RankingSubmission.anon_id == payload.anon_id,
         )
     )
-    if submission is None:
-        submission = RankingSubmission(category_id=payload.category_id, anon_id=anon_id)
-        session.add(submission)
-        await session.flush()
-    else:
-        await session.execute(delete(RankingEntry).where(RankingEntry.submission_id == submission.id))
+    if existing_submission is not None:
+        raise HTTPException(status_code=409, detail='ranking already submitted for this category')
+
+    submission = RankingSubmission(
+        category_id=payload.category_id,
+        anon_id=payload.anon_id,
+    )
+    session.add(submission)
+    await session.flush()
 
     for rank, item_id in enumerate(payload.ordered_item_ids, start=1):
         session.add(RankingEntry(submission_id=submission.id, item_id=item_id, rank=rank))

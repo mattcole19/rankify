@@ -57,6 +57,7 @@ async def test_submit_ranking_rejects_partial_rankings(test_client, seeded_categ
         json={
             'category_id': seeded_category['id'],
             'ordered_item_ids': ordered_item_ids[:2],
+            'anon_id': 'anon-partial',
         },
     )
 
@@ -65,7 +66,7 @@ async def test_submit_ranking_rejects_partial_rankings(test_client, seeded_categ
 
 
 @pytest.mark.asyncio()
-async def test_submit_ranking_replaces_existing_submission_for_same_anon_id(
+async def test_submit_ranking_rejects_existing_submission_for_same_anon_id(
     test_client, seeded_category
 ):
     category_response = await test_client.get(f'/categories/{seeded_category["slug"]}')
@@ -80,7 +81,6 @@ async def test_submit_ranking_replaces_existing_submission_for_same_anon_id(
         },
     )
     assert first_response.status_code == 201
-    first_submission_id = first_response.json()['submission_id']
 
     second_response = await test_client.post(
         '/rankings',
@@ -90,10 +90,8 @@ async def test_submit_ranking_replaces_existing_submission_for_same_anon_id(
             'anon_id': 'anon-stable-user',
         },
     )
-    assert second_response.status_code == 201
-    second_payload = second_response.json()
-    assert second_payload['submission_id'] == first_submission_id
-    assert second_payload['anon_id'] == 'anon-stable-user'
+    assert second_response.status_code == 409
+    assert second_response.json()['detail'] == 'ranking already submitted for this category'
 
     async with get_session_factory()() as session:
         submission_count = await session.scalar(
@@ -103,6 +101,22 @@ async def test_submit_ranking_replaces_existing_submission_for_same_anon_id(
             )
         )
     assert submission_count == 1
+
+
+@pytest.mark.asyncio()
+async def test_submit_ranking_requires_anon_id(test_client, seeded_category):
+    category_response = await test_client.get(f'/categories/{seeded_category["slug"]}')
+    ordered_item_ids = [item['id'] for item in category_response.json()['items']]
+
+    response = await test_client.post(
+        '/rankings',
+        json={
+            'category_id': seeded_category['id'],
+            'ordered_item_ids': ordered_item_ids,
+        },
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio()

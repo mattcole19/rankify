@@ -98,5 +98,7 @@ describe('App', () => {
     })
 
     expect(rankingRequestBody?.anon_id).toEqual(expect.any(String))
+    expect(screen.getByRole('button', { name: 'Already Submitted' })).toBeDisabled()
+    expect(screen.getByText('You already submitted this category.')).toBeInTheDocument()
   })
 })

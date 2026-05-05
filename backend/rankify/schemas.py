@@ -34,7 +34,7 @@ class CategoryDetail(BaseModel):
 class RankingSubmitRequest(BaseModel):
     category_id: int
     ordered_item_ids: list[int] = Field(min_length=1)
-    anon_id: str | None = Field(default=None, max_length=80)
+    anon_id: str = Field(min_length=1, max_length=80)
 
     @field_validator('ordered_item_ids')
     @classmethod
