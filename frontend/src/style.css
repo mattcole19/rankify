@@ -190,6 +190,11 @@ button:focus-visible {
   color: #ffc4c7;
 }
 
+.submission-note {
+  margin: 0.9rem 0 0;
+  color: #a8f3bc;
+}
+
 .rank-list {
   margin-top: 1.25rem;
   display: grid;

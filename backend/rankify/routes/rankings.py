@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -41,9 +40,18 @@ async def submit_ranking(
             status_code=400, detail='ranking must include every item in the category'
         )
 
+    existing_submission = await session.scalar(
+        select(RankingSubmission).where(
+            RankingSubmission.category_id == payload.category_id,
+            RankingSubmission.anon_id == payload.anon_id,
+        )
+    )
+    if existing_submission is not None:
+        raise HTTPException(status_code=409, detail='ranking already submitted for this category')
+
     submission = RankingSubmission(
         category_id=payload.category_id,
-        anon_id=payload.anon_id or uuid4().hex,
+        anon_id=payload.anon_id,
     )
     session.add(submission)
     await session.flush()

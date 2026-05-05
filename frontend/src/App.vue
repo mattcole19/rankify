@@ -44,6 +44,8 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const supabaseClient =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
+const anonStorageKey = 'rankify_anon_id'
+const submittedCategoriesStorageKey = 'rankify_submitted_categories'
 const isAdminView = window.location.pathname.startsWith('/admin')
 const loading = ref(false)
 const submitting = ref(false)
@@ -66,8 +68,28 @@ const itemCategoryId = ref<number | null>(null)
 const newItemsText = ref('')
 const adminSession = ref<Session | null>(null)
 const adminAuthLoading = ref(false)
+const anonId = ref<string>('')
+const submittedCategoryIds = ref<Set<number>>(new Set())
 
-const canSubmit = computed(() => category.value !== null && rankingItems.value.length > 1)
+const hasSubmittedCurrentCategory = computed(() => {
+  const categoryId = category.value?.id
+  if (!categoryId) {
+    return false
+  }
+  return submittedCategoryIds.value.has(categoryId)
+})
+const canSubmit = computed(
+  () => category.value !== null && rankingItems.value.length > 1 && !hasSubmittedCurrentCategory.value,
+)
+const submitButtonLabel = computed(() => {
+  if (submitting.value) {
+    return 'Submitting…'
+  }
+  if (hasSubmittedCurrentCategory.value) {
+    return 'Already Submitted'
+  }
+  return 'Submit Ranking'
+})
 const hasAdminToken = computed(() => Boolean(adminSession.value?.access_token))
 const hasAdminAccess = computed(
   () => hasAdminToken.value || adminSecret.value.trim().length > 0,
@@ -113,6 +135,77 @@ const formatApiError = (payload: unknown, fallback: string): string => {
     }
   }
   return fallback
+}
+
+const createAnonId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `anon-${Math.random().toString(36).slice(2)}-${Date.now()}`
+}
+
+const getLocalStorage = (): Storage | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  const storage = window.localStorage
+  if (!storage) {
+    return null
+  }
+  if (typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+    return null
+  }
+  return storage
+}
+
+const getOrCreateAnonId = (): string => {
+  const storage = getLocalStorage()
+  if (!storage) {
+    return createAnonId()
+  }
+  const existing = storage.getItem(anonStorageKey)
+  if (existing) {
+    return existing
+  }
+  const generated = createAnonId()
+  storage.setItem(anonStorageKey, generated)
+  return generated
+}
+
+const loadSubmittedCategoryIds = () => {
+  const storage = getLocalStorage()
+  if (!storage) {
+    submittedCategoryIds.value = new Set()
+    return
+  }
+  const raw = storage.getItem(submittedCategoriesStorageKey)
+  if (!raw) {
+    submittedCategoryIds.value = new Set()
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) {
+      submittedCategoryIds.value = new Set()
+      return
+    }
+    const ids = parsed
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0)
+    submittedCategoryIds.value = new Set(ids)
+  } catch {
+    submittedCategoryIds.value = new Set()
+  }
+}
+
+const markCategorySubmitted = (categoryId: number) => {
+  submittedCategoryIds.value = new Set([...submittedCategoryIds.value, categoryId])
+  const storage = getLocalStorage()
+  if (!storage) {
+    return
+  }
+  storage.setItem(submittedCategoriesStorageKey, JSON.stringify([...submittedCategoryIds.value]))
 }
 
 const fetchCategories = async () => {
@@ -305,6 +398,10 @@ const selectCategory = async (slug: string) => {
   category.value = payload
   const canonicalOrder = [...payload.items].sort((a, b) => a.display_order - b.display_order)
   rankingItems.value = shuffleItems(canonicalOrder)
+
+  if (submittedCategoryIds.value.has(payload.id)) {
+    await loadCommunityRanking()
+  }
 }
 
 const moveItem = (index: number, direction: -1 | 1) => {
@@ -374,13 +471,24 @@ const submitRanking = async () => {
       body: JSON.stringify({
         category_id: category.value.id,
         ordered_item_ids: rankingItems.value.map((item) => item.id),
+        anon_id: anonId.value,
       }),
     })
 
-    if (!response.ok) {
-      throw new Error(`Could not submit ranking (${response.status})`)
+    if (response.status === 409 && category.value) {
+      markCategorySubmitted(category.value.id)
+      error.value = null
+      await loadCommunityRanking()
+      return
     }
 
+    if (!response.ok) {
+      const payload = await response.json()
+      throw new Error(formatApiError(payload, `Could not submit ranking (${response.status})`))
+    }
+
+    markCategorySubmitted(category.value.id)
+    error.value = null
     await loadCommunityRanking()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Unknown error'
@@ -390,6 +498,8 @@ const submitRanking = async () => {
 }
 
 onMounted(async () => {
+  anonId.value = getOrCreateAnonId()
+  loadSubmittedCategoryIds()
   await Promise.all([fetchCategories(), initializeAdminSession()])
 })
 </script>
@@ -447,9 +557,13 @@ onMounted(async () => {
 
       <div class="cta-row">
         <button class="cta" type="button" :disabled="!canSubmit || submitting" @click="submitRanking">
-          {{ submitting ? 'Submitting…' : 'Submit Ranking' }}
+          {{ submitButtonLabel }}
         </button>
       </div>
+
+      <p v-if="hasSubmittedCurrentCategory" class="submission-note">
+        You already submitted this category.
+      </p>
     </section>
 
     <section class="panel" aria-live="polite" v-if="communityRanking && !isAdminView">
