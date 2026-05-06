@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,9 +15,12 @@ router = APIRouter(prefix='/rankings', tags=['rankings'])
 
 @router.post('', response_model=RankingSubmitResponse, status_code=201)
 async def submit_ranking(
+    request: Request,
     payload: RankingSubmitRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RankingSubmitResponse:
+    settings = request.app.state.settings
+
     valid_items = (
         await session.execute(
             select(Item.id).where(
@@ -40,14 +43,15 @@ async def submit_ranking(
             status_code=400, detail='ranking must include every item in the category'
         )
 
-    existing_submission = await session.scalar(
-        select(RankingSubmission).where(
-            RankingSubmission.category_id == payload.category_id,
-            RankingSubmission.anon_id == payload.anon_id,
+    if not settings.repeat_submissions_enabled:
+        existing_submission = await session.scalar(
+            select(RankingSubmission).where(
+                RankingSubmission.category_id == payload.category_id,
+                RankingSubmission.anon_id == payload.anon_id,
+            )
         )
-    )
-    if existing_submission is not None:
-        raise HTTPException(status_code=409, detail='ranking already submitted for this category')
+        if existing_submission is not None:
+            raise HTTPException(status_code=409, detail='ranking already submitted for this category')
 
     submission = RankingSubmission(
         category_id=payload.category_id,

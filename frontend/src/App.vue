@@ -40,6 +40,7 @@ type CommunityRanking = {
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const initialAdminSecret = import.meta.env.VITE_ADMIN_SECRET ?? ''
+const repeatSubmissionOverride = import.meta.env.VITE_ALLOW_REPEAT_SUBMISSIONS
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const supabaseClient =
@@ -47,6 +48,10 @@ const supabaseClient =
 const anonStorageKey = 'rankify_anon_id'
 const submittedCategoriesStorageKey = 'rankify_submitted_categories'
 const isAdminView = window.location.pathname.startsWith('/admin')
+const allowRepeatSubmissions =
+  typeof repeatSubmissionOverride === 'string'
+    ? ['1', 'true', 'yes', 'on'].includes(repeatSubmissionOverride.toLowerCase())
+    : import.meta.env.MODE === 'development'
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref<string | null>(null)
@@ -72,6 +77,9 @@ const anonId = ref<string>('')
 const submittedCategoryIds = ref<Set<number>>(new Set())
 
 const hasSubmittedCurrentCategory = computed(() => {
+  if (allowRepeatSubmissions) {
+    return false
+  }
   const categoryId = category.value?.id
   if (!categoryId) {
     return false
@@ -173,6 +181,11 @@ const getOrCreateAnonId = (): string => {
 }
 
 const loadSubmittedCategoryIds = () => {
+  if (allowRepeatSubmissions) {
+    submittedCategoryIds.value = new Set()
+    return
+  }
+
   const storage = getLocalStorage()
   if (!storage) {
     submittedCategoryIds.value = new Set()
@@ -200,6 +213,10 @@ const loadSubmittedCategoryIds = () => {
 }
 
 const markCategorySubmitted = (categoryId: number) => {
+  if (allowRepeatSubmissions) {
+    return
+  }
+
   submittedCategoryIds.value = new Set([...submittedCategoryIds.value, categoryId])
   const storage = getLocalStorage()
   if (!storage) {
