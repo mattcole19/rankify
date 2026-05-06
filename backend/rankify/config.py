@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     supabase_url: Annotated[str | None, Field(alias='SUPABASE_URL')] = None
     supabase_anon_key: Annotated[str | None, Field(alias='SUPABASE_ANON_KEY')] = None
     admin_emails: Annotated[list[str], Field(alias='ADMIN_EMAILS')] = []
+    sentry_dsn: Annotated[str | None, Field(alias='SENTRY_DSN')] = None
+    sentry_environment: Annotated[str | None, Field(alias='SENTRY_ENVIRONMENT')] = None
+    sentry_traces_sample_rate: Annotated[
+        float, Field(alias='SENTRY_TRACES_SAMPLE_RATE')
+    ] = 0.0
 
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
@@ -44,6 +49,13 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return [email.strip().lower() for email in value if email.strip()]
         return [email.strip().lower() for email in value.split(',') if email.strip()]
+
+    @field_validator('sentry_traces_sample_rate')
+    @classmethod
+    def _validate_sentry_traces_sample_rate(cls, value: float) -> float:
+        if value < 0 or value > 1:
+            raise ValueError('SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1')
+        return value
 
 
 @lru_cache
