@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     supabase_url: Annotated[str | None, Field(alias='SUPABASE_URL')] = None
     supabase_anon_key: Annotated[str | None, Field(alias='SUPABASE_ANON_KEY')] = None
     admin_emails: Annotated[list[str], Field(alias='ADMIN_EMAILS')] = []
+    allow_repeat_submissions: Annotated[bool | None, Field(alias='ALLOW_REPEAT_SUBMISSIONS')] = None
     sentry_dsn: Annotated[str | None, Field(alias='SENTRY_DSN')] = None
     sentry_environment: Annotated[str | None, Field(alias='SENTRY_ENVIRONMENT')] = None
     sentry_traces_sample_rate: Annotated[
@@ -56,6 +57,12 @@ class Settings(BaseSettings):
         if value < 0 or value > 1:
             raise ValueError('SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1')
         return value
+
+    @property
+    def repeat_submissions_enabled(self) -> bool:
+        if self.allow_repeat_submissions is not None:
+            return self.allow_repeat_submissions
+        return self.environment == 'local'
 
 
 @lru_cache
