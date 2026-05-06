@@ -45,6 +45,30 @@ body {
   gap: 2rem;
 }
 
+.top-nav {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.nav-link[aria-current='page'] {
+  border-color: rgba(124, 77, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(124, 77, 255, 0.2) inset;
+}
+
 .hero {
   padding: 2.5rem;
   border-radius: 32px;

@@ -506,8 +506,12 @@ onMounted(async () => {
 
 <template>
   <main class="shell">
+    <nav v-if="isAdminView" class="top-nav" aria-label="Primary">
+      <a class="nav-link" href="/">Home</a>
+    </nav>
+
     <section class="hero" v-if="!isAdminView">
-      <p class="eyebrow">Rankify MVP</p>
+      <p class="eyebrow">Rankify</p>
       <h1>Rank fast. Compare with everyone.</h1>
       <p class="lede">Choose a category, reorder items, submit, and instantly view the community ranking.</p>
 
