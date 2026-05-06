@@ -6,6 +6,7 @@ type CategorySummary = {
   id: number
   slug: string
   name: string
+  version_number: number
   item_count: number
 }
 
@@ -19,9 +20,18 @@ type CategoryDetail = {
   id: number
   slug: string
   name: string
+  version_number: number
   description: string | null
   submission_count: number
   items: CategoryItem[]
+}
+
+type CategoryVersionSummary = {
+  category_id: number
+  version_number: number
+  status: string
+  item_count: number
+  submission_count: number
 }
 
 type CommunityItem = {
@@ -34,6 +44,7 @@ type CommunityItem = {
 type CommunityRanking = {
   category_id: number
   category_slug: string
+  category_version_number: number
   total_submissions: number
   items: CommunityItem[]
 }
@@ -60,16 +71,21 @@ const selectedSlug = ref<string | null>(null)
 const category = ref<CategoryDetail | null>(null)
 const rankingItems = ref<CategoryItem[]>([])
 const communityRanking = ref<CommunityRanking | null>(null)
+const categoryVersions = ref<CategoryVersionSummary[]>([])
+const selectedCommunityVersion = ref<number | null>(null)
 const draggedIndex = ref<number | null>(null)
 const adminSecret = ref(initialAdminSecret)
 const adminError = ref<string | null>(null)
 const adminMessage = ref<string | null>(null)
 const creatingCategory = ref(false)
 const addingItems = ref(false)
+const creatingVersion = ref(false)
 const newCategoryName = ref('')
 const newCategorySlug = ref('')
 const newCategoryDescription = ref('')
 const itemCategoryId = ref<number | null>(null)
+const versionCategorySlug = ref<string>('')
+const versionNewItemsText = ref('')
 const newItemsText = ref('')
 const adminSession = ref<Session | null>(null)
 const adminAuthLoading = ref(false)
@@ -102,6 +118,7 @@ const hasAdminToken = computed(() => Boolean(adminSession.value?.access_token))
 const hasAdminAccess = computed(
   () => hasAdminToken.value || adminSecret.value.trim().length > 0,
 )
+const latestVersionNumber = computed(() => categoryVersions.value[0]?.version_number ?? null)
 
 const shuffleItems = (items: CategoryItem[]) => {
   const shuffled = [...items]
@@ -240,6 +257,9 @@ const fetchCategories = async () => {
     if (firstCategory && itemCategoryId.value === null) {
       itemCategoryId.value = firstCategory.id
     }
+    if (firstCategory && !versionCategorySlug.value) {
+      versionCategorySlug.value = firstCategory.slug
+    }
     if (firstCategory) {
       await selectCategory(firstCategory.slug)
     }
@@ -248,6 +268,15 @@ const fetchCategories = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const fetchCategoryVersions = async (slug: string) => {
+  const response = await fetch(`${apiBase}/categories/${slug}/versions`)
+  if (!response.ok) {
+    categoryVersions.value = []
+    return
+  }
+  categoryVersions.value = (await response.json()) as CategoryVersionSummary[]
 }
 
 const initializeAdminSession = async () => {
@@ -400,12 +429,54 @@ const addItemsToCategory = async () => {
   }
 }
 
-const selectCategory = async (slug: string) => {
+const createCategoryVersion = async () => {
+  const slug = versionCategorySlug.value.trim()
+  const newItems = versionNewItemsText.value
+    .split(/\n|,/) 
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+
+  if (!slug) {
+    adminError.value = 'Choose a category to version'
+    return
+  }
+  if (newItems.length === 0) {
+    adminError.value = 'Enter at least one new item for the next version'
+    return
+  }
+
+  creatingVersion.value = true
+  adminError.value = null
+  adminMessage.value = null
+  try {
+    const response = await fetch(`${apiBase}/admin/categories/${slug}/versions`, {
+      method: 'POST',
+      headers: getAdminHeaders(),
+      body: JSON.stringify({ new_items: newItems }),
+    })
+    const payload = (await response.json()) as { detail?: unknown; version_number?: number }
+    if (!response.ok) {
+      throw new Error(formatApiError(payload, `Could not create category version (${response.status})`))
+    }
+
+    adminMessage.value = `Created ${slug} v${payload.version_number ?? '?'}`
+    versionNewItemsText.value = ''
+    await fetchCategories()
+    await selectCategory(slug)
+  } catch (err) {
+    adminError.value = err instanceof Error ? err.message : 'Unknown error'
+  } finally {
+    creatingVersion.value = false
+  }
+}
+
+const selectCategory = async (slug: string, version?: number) => {
   selectedSlug.value = slug
   communityRanking.value = null
   error.value = null
 
-  const response = await fetch(`${apiBase}/categories/${slug}`)
+  const versionQuery = version ? `?version=${version}` : ''
+  const response = await fetch(`${apiBase}/categories/${slug}${versionQuery}`)
   if (!response.ok) {
     error.value = `Unable to load category (${response.status})`
     return
@@ -413,11 +484,15 @@ const selectCategory = async (slug: string) => {
 
   const payload = (await response.json()) as CategoryDetail
   category.value = payload
+  if (version === undefined) {
+    await fetchCategoryVersions(slug)
+  }
+  selectedCommunityVersion.value = payload.version_number
   const canonicalOrder = [...payload.items].sort((a, b) => a.display_order - b.display_order)
   rankingItems.value = shuffleItems(canonicalOrder)
 
   if (submittedCategoryIds.value.has(payload.id)) {
-    await loadCommunityRanking()
+    await loadCommunityRanking(payload.version_number)
   }
 }
 
@@ -461,17 +536,20 @@ const handleDragEnd = () => {
   draggedIndex.value = null
 }
 
-const loadCommunityRanking = async () => {
+const loadCommunityRanking = async (version?: number) => {
   if (!selectedSlug.value) {
     return
   }
-  const response = await fetch(`${apiBase}/categories/${selectedSlug.value}/community-ranking`)
+  const targetVersion = version ?? selectedCommunityVersion.value
+  const versionQuery = targetVersion ? `?version=${targetVersion}` : ''
+  const response = await fetch(`${apiBase}/categories/${selectedSlug.value}/community-ranking${versionQuery}`)
   if (!response.ok) {
     error.value = `Unable to load community ranking (${response.status})`
     return
   }
 
   communityRanking.value = (await response.json()) as CommunityRanking
+  selectedCommunityVersion.value = communityRanking.value.category_version_number
 }
 
 const getCommunityScorePercent = (averageRank: number | null): number => {
@@ -512,7 +590,7 @@ const submitRanking = async () => {
     if (response.status === 409 && category.value) {
       markCategorySubmitted(category.value.id)
       error.value = null
-      await loadCommunityRanking()
+      await loadCommunityRanking(category.value.version_number)
       return
     }
 
@@ -523,7 +601,7 @@ const submitRanking = async () => {
 
     markCategorySubmitted(category.value.id)
     error.value = null
-    await loadCommunityRanking()
+    await loadCommunityRanking(category.value.version_number)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Unknown error'
   } finally {
@@ -558,7 +636,7 @@ onMounted(async () => {
         @change="selectCategory(($event.target as HTMLSelectElement).value)"
       >
         <option v-for="entry in categories" :key="entry.slug" :value="entry.slug">
-          {{ entry.name }} ({{ entry.item_count }} items)
+          {{ entry.name }} v{{ entry.version_number }} ({{ entry.item_count }} items)
         </option>
       </select>
 
@@ -606,8 +684,21 @@ onMounted(async () => {
 
     <section class="panel" aria-live="polite" v-if="communityRanking && !isAdminView">
       <p class="panel-label">community ranking</p>
-      <h2>{{ category?.name }}</h2>
+      <h2>{{ category?.name }} <span class="version-pill">v{{ communityRanking.category_version_number }}</span></h2>
       <p class="panel-detail">{{ communityRanking.total_submissions }} total submissions</p>
+      <div class="version-controls" v-if="categoryVersions.length > 1">
+        <label class="field-label" for="community-version-select">Version</label>
+        <select
+          id="community-version-select"
+          class="select"
+          :value="selectedCommunityVersion ?? communityRanking.category_version_number"
+          @change="loadCommunityRanking(Number(($event.target as HTMLSelectElement).value))"
+        >
+          <option v-for="entry in categoryVersions" :key="`community-v-${entry.version_number}`" :value="entry.version_number">
+            v{{ entry.version_number }} ({{ entry.submission_count }} submissions)
+          </option>
+        </select>
+      </div>
       <ol class="community-list">
         <li v-for="entry in communityRanking.items" :key="entry.item_id">
           <div class="community-item-top">
@@ -674,7 +765,7 @@ onMounted(async () => {
           <label class="field-label" for="item-category-select">Category</label>
           <select id="item-category-select" v-model.number="itemCategoryId" class="select">
             <option v-for="entry in categories" :key="entry.id" :value="entry.id">
-              {{ entry.name }}
+              {{ entry.name }} v{{ entry.version_number }}
             </option>
           </select>
 
@@ -683,6 +774,23 @@ onMounted(async () => {
 
           <button class="secondary" :disabled="addingItems || !hasAdminAccess" @click="addItemsToCategory">
             {{ addingItems ? 'Adding…' : 'Add Items' }}
+          </button>
+        </article>
+
+        <article class="admin-card">
+          <h3>Publish New Version</h3>
+          <label class="field-label" for="version-category-select">Category</label>
+          <select id="version-category-select" v-model="versionCategorySlug" class="select">
+            <option v-for="entry in categories" :key="`version-${entry.slug}`" :value="entry.slug">
+              {{ entry.name }} (latest v{{ entry.version_number }})
+            </option>
+          </select>
+
+          <label class="field-label" for="new-version-items">New items (comma or newline separated)</label>
+          <textarea id="new-version-items" v-model="versionNewItemsText" class="text-input" rows="4" />
+
+          <button class="secondary" :disabled="creatingVersion || !hasAdminAccess" @click="createCategoryVersion">
+            {{ creatingVersion ? 'Publishing…' : 'Publish New Version' }}
           </button>
         </article>
       </div>
