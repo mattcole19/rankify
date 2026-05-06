@@ -457,6 +457,23 @@ const loadCommunityRanking = async () => {
   communityRanking.value = (await response.json()) as CommunityRanking
 }
 
+const getCommunityScorePercent = (averageRank: number | null): number => {
+  if (averageRank === null || !communityRanking.value) {
+    return 0
+  }
+  const totalItems = communityRanking.value.items.length
+  if (totalItems <= 0) {
+    return 0
+  }
+
+  const clampedRank = Math.min(Math.max(averageRank, 1), totalItems)
+  return ((totalItems - clampedRank + 1) / totalItems) * 100
+}
+
+const getVoteLabel = (voteCount: number): string => {
+  return `${voteCount} vote${voteCount === 1 ? '' : 's'}`
+}
+
 const submitRanking = async () => {
   if (!category.value) {
     return
@@ -576,9 +593,19 @@ onMounted(async () => {
       <p class="panel-detail">{{ communityRanking.total_submissions }} total submissions</p>
       <ol class="community-list">
         <li v-for="entry in communityRanking.items" :key="entry.item_id">
-          <span>{{ entry.item_name }}</span>
-          <span v-if="entry.average_rank">avg #{{ entry.average_rank.toFixed(2) }}</span>
-          <span v-else>not ranked yet</span>
+          <div class="community-item-top">
+            <span class="community-item-name">{{ entry.item_name }}</span>
+            <span v-if="entry.average_rank" class="community-item-metric"
+              >avg #{{ entry.average_rank.toFixed(2) }}</span
+            >
+            <span v-else class="community-item-metric">not ranked yet</span>
+          </div>
+          <div class="community-item-bottom">
+            <div class="community-score-track" aria-hidden="true">
+              <span class="community-score-fill" :style="{ width: `${getCommunityScorePercent(entry.average_rank)}%` }" />
+            </div>
+            <span class="community-vote-count">{{ getVoteLabel(entry.vote_count) }}</span>
+          </div>
         </li>
       </ol>
     </section>
