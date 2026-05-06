@@ -12,11 +12,13 @@ from rankify.routes.admin import router as admin_router
 from rankify.routes.categories import router as categories_router
 from rankify.routes.health import router as health_router
 from rankify.routes.rankings import router as rankings_router
+from rankify.telemetry import configure_sentry
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     configure_logging()
     resolved_settings = settings or get_settings()
+    configure_sentry(resolved_settings)
 
     @asynccontextmanager
     async def _lifespan(_: FastAPI):
