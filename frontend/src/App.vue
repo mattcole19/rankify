@@ -121,7 +121,6 @@ const hasAdminToken = computed(() => Boolean(adminSession.value?.access_token))
 const hasAdminAccess = computed(
   () => hasAdminToken.value || adminSecret.value.trim().length > 0,
 )
-const latestVersionNumber = computed(() => categoryVersions.value[0]?.version_number ?? null)
 
 const shuffleItems = (items: CategoryItem[]) => {
   const shuffled = [...items]
