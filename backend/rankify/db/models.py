@@ -10,11 +10,16 @@ from rankify.db.base import Base
 
 class Category(Base):
     __tablename__ = 'categories'
+    __table_args__ = (
+        UniqueConstraint('slug', 'version_number', name='uq_categories_slug_version'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    slug: Mapped[str] = mapped_column(String(120), index=True)
     name: Mapped[str] = mapped_column(String(160))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='published')
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

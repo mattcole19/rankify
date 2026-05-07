@@ -276,9 +276,30 @@ button:focus-visible {
   margin: 0;
 }
 
+.version-pill {
+  display: inline-flex;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  border: 1px solid rgba(124, 77, 255, 0.5);
+  color: var(--muted);
+  vertical-align: middle;
+}
+
 .panel-detail {
   margin: 0.75rem 0;
   color: var(--muted);
+}
+
+.version-controls {
+  margin: 0.5rem 0 1rem;
+}
+
+.version-diff-note {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .panel-meta {
@@ -317,6 +338,20 @@ button:focus-visible {
 .community-item-name {
   color: var(--ink);
   min-width: 0;
+}
+
+.new-item-pill {
+  display: inline-flex;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #e9f9ee;
+  background: rgba(49, 180, 95, 0.35);
+  border: 1px solid rgba(49, 180, 95, 0.55);
 }
 
 .community-item-metric {

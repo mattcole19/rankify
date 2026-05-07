@@ -41,6 +41,8 @@ async def test_create_category_creates_record(test_client):
     assert payload['id'] > 0
     assert payload['name'] == 'Movies'
     assert payload['slug'] == 'movies'
+    assert payload['version_number'] == 1
+    assert payload['status'] == 'published'
 
 
 @pytest.mark.asyncio()
@@ -105,6 +107,33 @@ async def test_add_items_rejects_existing_item_names_case_insensitive(test_clien
         f'/admin/categories/{seeded_category["id"]}/items',
         headers={'x-admin-secret': 'test-admin-secret'},
         json={'items': ['sour worms']},
+    )
+
+    assert response.status_code == 409
+    assert response.json()['detail'] == 'Items already exist in category: sour worms'
+
+
+@pytest.mark.asyncio()
+async def test_create_category_version_adds_new_items_and_increments_version(test_client, seeded_category):
+    response = await test_client.post(
+        f'/admin/categories/{seeded_category["slug"]}/versions',
+        headers={'x-admin-secret': 'test-admin-secret'},
+        json={'new_items': ['Blue Raspberry']},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload['slug'] == seeded_category['slug']
+    assert payload['version_number'] == 2
+    assert payload['status'] == 'published'
+
+
+@pytest.mark.asyncio()
+async def test_create_category_version_rejects_duplicate_new_items(test_client, seeded_category):
+    response = await test_client.post(
+        f'/admin/categories/{seeded_category["slug"]}/versions',
+        headers={'x-admin-secret': 'test-admin-secret'},
+        json={'new_items': ['Sour Worms']},
     )
 
     assert response.status_code == 409

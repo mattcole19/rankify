@@ -19,11 +19,23 @@ describe('App', () => {
         return {
           ok: true,
           status: 200,
-          json: async () => [{ id: 1, slug: 'test-candy', name: 'Test Candy', item_count: 3 }],
+          json: async () => [
+            { id: 1, slug: 'test-candy', name: 'Test Candy', version_number: 1, item_count: 3 },
+          ],
         } as Response
       }
 
-      if (url.endsWith('/categories/test-candy')) {
+      if (url.endsWith('/categories/test-candy/versions')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            { category_id: 1, version_number: 1, status: 'published', item_count: 3, submission_count: 1 },
+          ],
+        } as Response
+      }
+
+      if (url.includes('/categories/test-candy') && !url.includes('/community-ranking') && !url.includes('/versions')) {
         return {
           ok: true,
           status: 200,
@@ -31,6 +43,7 @@ describe('App', () => {
             id: 1,
             slug: 'test-candy',
             name: 'Test Candy',
+            version_number: 1,
             description: 'seeded',
             submission_count: 0,
             items: [
@@ -51,13 +64,14 @@ describe('App', () => {
         } as Response
       }
 
-      if (url.endsWith('/categories/test-candy/community-ranking')) {
+      if (url.includes('/categories/test-candy/community-ranking')) {
         return {
           ok: true,
           status: 200,
           json: async () => ({
             category_id: 1,
             category_slug: 'test-candy',
+            category_version_number: 1,
             total_submissions: 1,
             items: [
               { item_id: 10, item_name: 'A', average_rank: 1, vote_count: 1 },
