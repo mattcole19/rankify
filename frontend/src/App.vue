@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { createClient, type AuthChangeEvent, type Session } from '@supabase/supabase-js'
+import AdminPanel from './components/AdminPanel.vue'
+import CommunityRankingPanel from './components/CommunityRankingPanel.vue'
+import PublicRankingSection from './components/PublicRankingSection.vue'
 
 type CategorySummary = {
   id: number
@@ -785,230 +788,78 @@ onMounted(async () => {
       <a class="nav-link" href="/">Home</a>
     </nav>
 
-    <section class="hero" v-if="!isAdminView">
-      <p class="eyebrow">Rankify</p>
-      <h1>Rank fast. Compare with everyone.</h1>
-      <p class="lede">Choose a category, reorder items, submit, and instantly view the community ranking.</p>
+    <PublicRankingSection
+      v-if="!isAdminView"
+      :loading="loading"
+      :categories="categories"
+      :selected-slug="selectedSlug"
+      :error="error"
+      :ranking-items="rankingItems"
+      :dragged-index="draggedIndex"
+      :can-submit="canSubmit"
+      :submitting="submitting"
+      :submit-button-label="submitButtonLabel"
+      :has-submitted-current-category="hasSubmittedCurrentCategory"
+      @select-category="selectCategory"
+      @drag-start="handleDragStart"
+      @drop="handleDrop"
+      @drag-end="handleDragEnd"
+      @move-item="moveItem($event.index, $event.direction)"
+      @submit-ranking="submitRanking"
+    />
 
-      <label class="field-label" for="category-select">Category</label>
-      <select
-        id="category-select"
-        class="select"
-        :disabled="loading || categories.length === 0"
-        :value="selectedSlug ?? ''"
-        @change="selectCategory(($event.target as HTMLSelectElement).value)"
-      >
-        <option v-for="entry in categories" :key="entry.slug" :value="entry.slug">
-          {{ entry.name }} ({{ entry.item_count }} items)
-        </option>
-      </select>
+    <CommunityRankingPanel
+      v-if="communityRanking && !isAdminView"
+      :community-ranking="communityRanking"
+      :category-name="category?.name"
+      :category-versions="categoryVersions"
+      :selected-community-version="selectedCommunityVersion"
+      :community-version-diff-summary="communityVersionDiffSummary"
+      :is-community-new-item="isCommunityNewItem"
+      :get-community-score-percent="getCommunityScorePercent"
+      :get-vote-label="getVoteLabel"
+      @select-version="loadCommunityRanking"
+    />
 
-      <p v-if="error" class="error">{{ error }}</p>
-
-      <div v-if="rankingItems.length > 0" class="rank-list">
-        <article
-          v-for="(item, index) in rankingItems"
-          :key="item.id"
-          class="rank-item"
-          :class="{ dragging: draggedIndex === index }"
-          draggable="true"
-          @dragstart="handleDragStart(index)"
-          @dragover.prevent
-          @drop="handleDrop(index)"
-          @dragend="handleDragEnd"
-        >
-          <p class="rank-position">#{{ index + 1 }}</p>
-          <p class="rank-name">{{ item.name }}</p>
-          <div class="rank-actions">
-            <button class="secondary small" :disabled="index === 0" @click="moveItem(index, -1)">
-              Up
-            </button>
-            <button
-              class="secondary small"
-              :disabled="index === rankingItems.length - 1"
-              @click="moveItem(index, 1)"
-            >
-              Down
-            </button>
-          </div>
-        </article>
-      </div>
-
-      <div class="cta-row">
-        <button class="cta" type="button" :disabled="!canSubmit || submitting" @click="submitRanking">
-          {{ submitButtonLabel }}
-        </button>
-      </div>
-
-      <p v-if="hasSubmittedCurrentCategory" class="submission-note">
-        You already submitted this category.
-      </p>
-    </section>
-
-    <section class="panel" aria-live="polite" v-if="communityRanking && !isAdminView">
-      <p class="panel-label">community ranking</p>
-      <h2>{{ category?.name }} <span class="version-pill">v{{ communityRanking.category_version_number }}</span></h2>
-      <p class="panel-detail">{{ communityRanking.total_submissions }} total submissions</p>
-      <div class="version-controls" v-if="categoryVersions.length > 1">
-        <label class="field-label" for="community-version-select">Version</label>
-        <select
-          id="community-version-select"
-          class="select"
-          :value="selectedCommunityVersion ?? communityRanking.category_version_number"
-          @change="loadCommunityRanking(Number(($event.target as HTMLSelectElement).value))"
-        >
-          <option v-for="entry in categoryVersions" :key="`community-v-${entry.version_number}`" :value="entry.version_number">
-            v{{ entry.version_number }} ({{ entry.submission_count }} submissions)
-          </option>
-        </select>
-        <p v-if="communityVersionDiffSummary" class="version-diff-note">{{ communityVersionDiffSummary }}</p>
-      </div>
-      <ol class="community-list">
-        <li v-for="entry in communityRanking.items" :key="entry.item_id">
-          <div class="community-item-top">
-            <span class="community-item-name"
-              >{{ entry.item_name }}
-              <span v-if="isCommunityNewItem(entry.item_name)" class="new-item-pill">New</span></span
-            >
-            <span v-if="entry.average_rank" class="community-item-metric"
-              >avg #{{ entry.average_rank.toFixed(2) }}</span
-            >
-            <span v-else class="community-item-metric">not ranked yet</span>
-          </div>
-          <div class="community-item-bottom">
-            <div class="community-score-track" aria-hidden="true">
-              <span class="community-score-fill" :style="{ width: `${getCommunityScorePercent(entry.average_rank)}%` }" />
-            </div>
-            <span class="community-vote-count">{{ getVoteLabel(entry.vote_count) }}</span>
-          </div>
-        </li>
-      </ol>
-    </section>
-
-    <section class="panel admin-panel" aria-live="polite" v-if="isAdminView">
-      <p class="panel-label">admin tools</p>
-      <h2>Create Categories and Items</h2>
-      <p class="panel-detail">Sign in with Google to manage categories and items.</p>
-
-      <div class="admin-auth-row">
-        <button class="cta" type="button" :disabled="adminAuthLoading || hasAdminToken" @click="signInWithGoogle">
-          {{ hasAdminToken ? 'Signed in with Google' : 'Sign in with Google' }}
-        </button>
-        <button class="secondary" type="button" :disabled="!hasAdminToken" @click="signOutAdmin">
-          Sign out
-        </button>
-      </div>
-
-      <p class="panel-detail" v-if="hasAdminToken">Authenticated as {{ adminSession?.user?.email }}</p>
-      <p class="panel-detail">Fallback local-only option:</p>
-
-      <label class="field-label" for="admin-secret">Admin Secret</label>
-      <input id="admin-secret" v-model="adminSecret" class="text-input" type="password" />
-
-      <div class="admin-grid">
-        <article class="admin-card">
-          <h3>Create Category + Items</h3>
-          <label class="field-label" for="new-category-name">Name</label>
-          <input id="new-category-name" v-model="newCategoryName" class="text-input" type="text" />
-
-          <label class="field-label" for="new-category-slug">Slug</label>
-          <input id="new-category-slug" v-model="newCategorySlug" class="text-input" type="text" />
-
-          <label class="field-label" for="new-category-description">Description</label>
-          <textarea
-            id="new-category-description"
-            v-model="newCategoryDescription"
-            class="text-input"
-            rows="3"
-          />
-
-          <label class="field-label">Items</label>
-          <div class="admin-stack">
-            <div v-for="(itemDraft, index) in newCategoryItems" :key="`new-item-${index}`" class="admin-inline-row">
-              <input
-                :value="itemDraft"
-                class="text-input admin-inline-input"
-                type="text"
-                :placeholder="`Item ${index + 1}`"
-                @input="newCategoryItems[index] = ($event.target as HTMLInputElement).value"
-              />
-              <button
-                class="secondary small"
-                type="button"
-                :disabled="newCategoryItems.length <= 2"
-                @click="removeItemField(index)"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-          <button class="secondary small" type="button" @click="addItemField">+ Add Item</button>
-
-          <button class="secondary" :disabled="creatingCategory || !hasAdminAccess" @click="createCategory">
-            {{ creatingCategory ? 'Creating…' : 'Create Category' }}
-          </button>
-        </article>
-
-        <article class="admin-card">
-          <div class="admin-card-title-row">
-            <h3>Edit Items and Publish New Version</h3>
-            <button class="secondary small" type="button" :disabled="loadingAdminCategories" @click="fetchAdminCategories">
-              {{ loadingAdminCategories ? 'Refreshing…' : 'Refresh' }}
-            </button>
-          </div>
-
-          <label class="field-label" for="admin-category-select">Category</label>
-          <select
-            id="admin-category-select"
-            v-model="managedCategorySlug"
-            class="select"
-            :disabled="loadingAdminCategories || adminLatestCategories.length === 0"
-            @change="onManagedCategoryChange"
-          >
-            <option v-for="entry in adminLatestCategories" :key="entry.slug" :value="entry.slug">
-              {{ entry.name }} (latest v{{ entry.version_number }})
-            </option>
-          </select>
-
-          <template v-if="managedCategoryDetail">
-            <p class="panel-detail">
-              Editing <strong>{{ managedCategoryDetail.slug }}</strong> from v{{ managedCategoryDetail.version_number }}.
-              Changes here are local until you publish.
-            </p>
-
-            <label class="field-label" for="admin-new-item">Add Item</label>
-            <div class="admin-inline-row">
-              <input id="admin-new-item" v-model="managedNewItem" class="text-input admin-inline-input" type="text" />
-              <button class="secondary" :disabled="!hasAdminAccess" @click="addManagedItem">
-                Add
-              </button>
-            </div>
-
-            <label class="field-label">Items for Next Version</label>
-            <div class="admin-stack">
-              <div v-for="(itemName, index) in managedEditedItems" :key="`${managedCategorySlug}-${itemName}-${index}`" class="admin-inline-row">
-                <input :value="itemName" class="text-input admin-inline-input" type="text" disabled />
-                <button
-                  class="secondary small danger"
-                  :disabled="!hasAdminAccess"
-                  @click="removeManagedItem(index)"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-
-            <button class="secondary" :disabled="creatingVersion || !hasAdminAccess || !hasManagedChanges" @click="publishManagedVersion">
-              {{ creatingVersion ? 'Publishing…' : 'Publish New Version' }}
-            </button>
-          </template>
-
-          <p v-else class="panel-detail">No categories yet. Create one first.</p>
-        </article>
-      </div>
-
-      <p v-if="adminError" class="error">{{ adminError }}</p>
-      <p v-if="adminMessage" class="admin-success">{{ adminMessage }}</p>
-    </section>
+    <AdminPanel
+      v-if="isAdminView"
+      :admin-auth-loading="adminAuthLoading"
+      :has-admin-token="hasAdminToken"
+      :admin-session="adminSession"
+      :admin-secret="adminSecret"
+      :has-admin-access="hasAdminAccess"
+      :creating-category="creatingCategory"
+      :new-category-name="newCategoryName"
+      :new-category-slug="newCategorySlug"
+      :new-category-description="newCategoryDescription"
+      :new-category-items="newCategoryItems"
+      :loading-admin-categories="loadingAdminCategories"
+      :admin-latest-categories="adminLatestCategories"
+      :managed-category-slug="managedCategorySlug"
+      :managed-category-detail="managedCategoryDetail"
+      :managed-new-item="managedNewItem"
+      :managed-edited-items="managedEditedItems"
+      :has-managed-changes="hasManagedChanges"
+      :creating-version="creatingVersion"
+      :admin-error="adminError"
+      :admin-message="adminMessage"
+      @sign-in-google="signInWithGoogle"
+      @sign-out-admin="signOutAdmin"
+      @update-admin-secret="adminSecret = $event"
+      @update-new-category-name="newCategoryName = $event"
+      @update-new-category-slug="newCategorySlug = $event"
+      @update-new-category-description="newCategoryDescription = $event"
+      @update-new-category-item="newCategoryItems[$event.index] = $event.value"
+      @remove-item-field="removeItemField"
+      @add-item-field="addItemField"
+      @create-category="createCategory"
+      @refresh-admin-categories="fetchAdminCategories"
+      @update-managed-category-slug="managedCategorySlug = $event"
+      @managed-category-change="onManagedCategoryChange"
+      @update-managed-new-item="managedNewItem = $event"
+      @add-managed-item="addManagedItem"
+      @remove-managed-item="removeManagedItem"
+      @publish-managed-version="publishManagedVersion"
+    />
   </main>
 </template>
