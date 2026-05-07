@@ -12,13 +12,55 @@ from rankify.database import get_db_session
 from rankify.db.models import Category, Item
 from rankify.schemas import (
     AdminAddCategoryItemsRequest,
+    AdminCategoryDetailResponse,
+    AdminCategoryListItem,
     AdminCategoryResponse,
     AdminCreateCategoryRequest,
     AdminCreateCategoryVersionRequest,
+    AdminUpdateCategoryRequest,
+    AdminUpdateItemRequest,
     ItemOut,
 )
 
 router = APIRouter(prefix='/admin', tags=['admin'])
+
+IMMUTABLE_PUBLISHED_DETAIL = 'Published versions are immutable; create a new version instead'
+
+
+@router.get(
+    '/categories',
+    response_model=list[AdminCategoryListItem],
+    dependencies=[Depends(require_admin_access)],
+)
+async def list_admin_categories(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[AdminCategoryListItem]:
+    rows = (
+        await session.execute(
+            select(
+                Category.id,
+                Category.slug,
+                Category.name,
+                Category.version_number,
+                Category.status,
+                func.count(Item.id).label('item_count'),
+            )
+            .outerjoin(Item, Item.category_id == Category.id)
+            .group_by(Category.id)
+            .order_by(Category.name.asc(), Category.version_number.desc())
+        )
+    ).all()
+    return [
+        AdminCategoryListItem(
+            id=row.id,
+            slug=row.slug,
+            name=row.name,
+            version_number=row.version_number,
+            status=row.status,
+            item_count=row.item_count,
+        )
+        for row in rows
+    ]
 
 
 @router.post(
@@ -43,6 +85,10 @@ async def create_category(
         status='published',
     )
     session.add(category)
+    await session.flush()
+    for index, item_name in enumerate(payload.items):
+        session.add(Item(category_id=category.id, name=item_name, display_order=index))
+
     try:
         await session.commit()
     except IntegrityError as err:
@@ -60,6 +106,88 @@ async def create_category(
         version_number=category.version_number,
         status=category.status,
     )
+
+
+@router.get(
+    '/categories/{category_id}',
+    response_model=AdminCategoryDetailResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+async def get_admin_category(
+    category_id: int,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AdminCategoryDetailResponse:
+    category = await session.scalar(select(Category).where(Category.id == category_id))
+    if category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
+
+    items = (
+        await session.execute(
+            select(Item)
+            .where(Item.category_id == category.id)
+            .order_by(Item.display_order.asc(), Item.id.asc())
+        )
+    ).scalars().all()
+
+    return AdminCategoryDetailResponse(
+        id=category.id,
+        slug=category.slug,
+        name=category.name,
+        description=category.description,
+        version_number=category.version_number,
+        status=category.status,
+        items=[ItemOut(id=item.id, name=item.name, display_order=item.display_order) for item in items],
+    )
+
+
+@router.patch(
+    '/categories/{category_id}',
+    response_model=AdminCategoryResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+async def update_category(
+    category_id: int,
+    payload: AdminUpdateCategoryRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AdminCategoryResponse:
+    category = await session.scalar(select(Category).where(Category.id == category_id))
+    if category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
+    if category.status != 'draft':
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=IMMUTABLE_PUBLISHED_DETAIL)
+
+    category.name = payload.name
+    category.description = payload.description
+    await session.commit()
+    await session.refresh(category)
+
+    return AdminCategoryResponse(
+        id=category.id,
+        slug=category.slug,
+        name=category.name,
+        description=category.description,
+        version_number=category.version_number,
+        status=category.status,
+    )
+
+
+@router.delete(
+    '/categories/{category_id}',
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin_access)],
+)
+async def delete_category(
+    category_id: int,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> None:
+    category = await session.scalar(select(Category).where(Category.id == category_id))
+    if category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
+    if category.status != 'draft':
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=IMMUTABLE_PUBLISHED_DETAIL)
+
+    await session.delete(category)
+    await session.commit()
 
 
 @router.post(
@@ -82,23 +210,6 @@ async def create_category_version(
     if latest_published is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
 
-    current_items = (
-        await session.execute(
-            select(Item.name)
-            .where(Item.category_id == latest_published.id)
-            .order_by(Item.display_order.asc())
-        )
-    ).scalars().all()
-    existing_names_normalized = {item.lower() for item in current_items}
-    new_names_normalized = {item.lower() for item in payload.new_items}
-    overlaps = sorted(existing_names_normalized.intersection(new_names_normalized))
-    if overlaps:
-        overlap_summary = ', '.join(overlaps)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f'Items already exist in category: {overlap_summary}',
-        )
-
     next_version_number = latest_published.version_number + 1
     version_description = (
         payload.description if payload.description is not None else latest_published.description
@@ -113,8 +224,7 @@ async def create_category_version(
     session.add(new_version)
     await session.flush()
 
-    combined_items = [*current_items, *payload.new_items]
-    for index, item_name in enumerate(combined_items):
+    for index, item_name in enumerate(payload.items):
         session.add(Item(category_id=new_version.id, name=item_name, display_order=index))
 
     await session.commit()
@@ -131,6 +241,41 @@ async def create_category_version(
 
 
 @router.post(
+    '/categories/{category_id}/publish',
+    response_model=AdminCategoryResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+async def publish_category_version(
+    category_id: int,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AdminCategoryResponse:
+    category = await session.scalar(select(Category).where(Category.id == category_id))
+    if category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
+    if category.status != 'draft':
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Category is already published')
+
+    item_count = await session.scalar(select(func.count(Item.id)).where(Item.category_id == category.id))
+    if (item_count or 0) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Category requires at least two items before publishing',
+        )
+
+    category.status = 'published'
+    await session.commit()
+    await session.refresh(category)
+    return AdminCategoryResponse(
+        id=category.id,
+        slug=category.slug,
+        name=category.name,
+        description=category.description,
+        version_number=category.version_number,
+        status=category.status,
+    )
+
+
+@router.post(
     '/categories/{category_id}/items',
     response_model=list[ItemOut],
     status_code=status.HTTP_201_CREATED,
@@ -141,9 +286,11 @@ async def add_category_items(
     payload: AdminAddCategoryItemsRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[ItemOut]:
-    category_exists = await session.scalar(select(Category.id).where(Category.id == category_id))
-    if category_exists is None:
+    category = await session.scalar(select(Category).where(Category.id == category_id))
+    if category is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
+    if category.status != 'draft':
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=IMMUTABLE_PUBLISHED_DETAIL)
 
     current_max_order = await session.scalar(
         select(func.max(Item.display_order)).where(Item.category_id == category_id)
@@ -181,3 +328,81 @@ async def add_category_items(
         ItemOut(id=item.id, name=item.name, display_order=item.display_order)
         for item in created_items
     ]
+
+
+@router.patch(
+    '/categories/{category_id}/items/{item_id}',
+    response_model=ItemOut,
+    dependencies=[Depends(require_admin_access)],
+)
+async def update_category_item(
+    category_id: int,
+    item_id: int,
+    payload: AdminUpdateItemRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ItemOut:
+    item = await session.scalar(
+        select(Item).where(Item.id == item_id, Item.category_id == category_id)
+    )
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Item not found')
+
+    category = await session.scalar(select(Category).where(Category.id == category_id))
+    if category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
+    if category.status != 'draft':
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=IMMUTABLE_PUBLISHED_DETAIL)
+
+    duplicate_name = await session.scalar(
+        select(Item.id).where(
+            Item.category_id == category_id,
+            func.lower(Item.name) == payload.name.lower(),
+            Item.id != item_id,
+        )
+    )
+    if duplicate_name is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'Items already exist in category: {payload.name.lower()}',
+        )
+
+    item.name = payload.name
+    await session.commit()
+    await session.refresh(item)
+    return ItemOut(id=item.id, name=item.name, display_order=item.display_order)
+
+
+@router.delete(
+    '/categories/{category_id}/items/{item_id}',
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin_access)],
+)
+async def delete_category_item(
+    category_id: int,
+    item_id: int,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> None:
+    category = await session.scalar(select(Category).where(Category.id == category_id))
+    if category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
+    if category.status != 'draft':
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=IMMUTABLE_PUBLISHED_DETAIL)
+
+    item = await session.scalar(select(Item).where(Item.id == item_id, Item.category_id == category_id))
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Item not found')
+
+    await session.delete(item)
+    await session.flush()
+
+    remaining_items = (
+        await session.execute(
+            select(Item)
+            .where(Item.category_id == category_id)
+            .order_by(Item.display_order.asc(), Item.id.asc())
+        )
+    ).scalars().all()
+    for index, remaining_item in enumerate(remaining_items):
+        remaining_item.display_order = index
+
+    await session.commit()

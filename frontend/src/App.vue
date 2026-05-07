@@ -49,6 +49,15 @@ type CommunityRanking = {
   items: CommunityItem[]
 }
 
+type AdminCategoryListItem = {
+  id: number
+  slug: string
+  name: string
+  version_number: number
+  status: string
+  item_count: number
+}
+
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const initialAdminSecret = import.meta.env.VITE_ADMIN_SECRET ?? ''
 const repeatSubmissionOverride = import.meta.env.VITE_ALLOW_REPEAT_SUBMISSIONS
@@ -81,15 +90,18 @@ const adminSecret = ref(initialAdminSecret)
 const adminError = ref<string | null>(null)
 const adminMessage = ref<string | null>(null)
 const creatingCategory = ref(false)
-const addingItems = ref(false)
+const loadingAdminCategories = ref(false)
 const creatingVersion = ref(false)
 const newCategoryName = ref('')
 const newCategorySlug = ref('')
 const newCategoryDescription = ref('')
-const itemCategoryId = ref<number | null>(null)
-const versionCategorySlug = ref<string>('')
-const versionNewItemsText = ref('')
-const newItemsText = ref('')
+const newCategoryItems = ref<string[]>(['', ''])
+const adminCategories = ref<AdminCategoryListItem[]>([])
+const managedCategorySlug = ref<string>('')
+const managedCategoryDetail = ref<CategoryDetail | null>(null)
+const managedBaseItems = ref<string[]>([])
+const managedEditedItems = ref<string[]>([])
+const managedNewItem = ref('')
 const adminSession = ref<Session | null>(null)
 const adminAuthLoading = ref(false)
 const anonId = ref<string>('')
@@ -121,6 +133,19 @@ const hasAdminToken = computed(() => Boolean(adminSession.value?.access_token))
 const hasAdminAccess = computed(
   () => hasAdminToken.value || adminSecret.value.trim().length > 0,
 )
+const adminLatestCategories = computed(() => {
+  const latestBySlug = new Map<string, AdminCategoryListItem>()
+  for (const entry of adminCategories.value) {
+    const existing = latestBySlug.get(entry.slug)
+    if (!existing || entry.version_number > existing.version_number) {
+      latestBySlug.set(entry.slug, entry)
+    }
+  }
+  return [...latestBySlug.values()].sort((a, b) => a.name.localeCompare(b.name))
+})
+const hasManagedChanges = computed(() => {
+  return JSON.stringify(managedBaseItems.value) !== JSON.stringify(managedEditedItems.value)
+})
 
 const shuffleItems = (items: CategoryItem[]) => {
   const shuffled = [...items]
@@ -256,12 +281,6 @@ const fetchCategories = async () => {
     categories.value = payload
 
     const firstCategory = payload[0]
-    if (firstCategory && itemCategoryId.value === null) {
-      itemCategoryId.value = firstCategory.id
-    }
-    if (firstCategory && !versionCategorySlug.value) {
-      versionCategorySlug.value = firstCategory.slug
-    }
     if (firstCategory) {
       await selectCategory(firstCategory.slug)
     }
@@ -348,8 +367,13 @@ const initializeAdminSession = async () => {
     data: { session },
   } = await supabaseClient.auth.getSession()
   adminSession.value = session
-  supabaseClient.auth.onAuthStateChange((_event: AuthChangeEvent, sessionState: Session | null) => {
+  supabaseClient.auth.onAuthStateChange(async (_event: AuthChangeEvent, sessionState: Session | null) => {
     adminSession.value = sessionState
+    try {
+      await fetchAdminCategories()
+    } catch (err) {
+      adminError.value = err instanceof Error ? err.message : 'Unknown error'
+    }
   })
   adminAuthLoading.value = false
 }
@@ -395,12 +419,77 @@ const getAdminHeaders = (): Record<string, string> => {
   throw new Error('Sign in with Google or provide an admin secret')
 }
 
+const fetchAdminCategories = async () => {
+  if (!isAdminView || !hasAdminAccess.value) {
+    adminCategories.value = []
+    managedCategorySlug.value = ''
+    managedCategoryDetail.value = null
+    managedBaseItems.value = []
+    managedEditedItems.value = []
+    return
+  }
+
+  loadingAdminCategories.value = true
+  try {
+    const response = await fetch(`${apiBase}/admin/categories`, {
+      headers: getAdminHeaders(),
+    })
+    const payload = (await response.json()) as AdminCategoryListItem[] | { detail?: unknown }
+    if (!response.ok) {
+      throw new Error(formatApiError(payload, `Could not load admin categories (${response.status})`))
+    }
+
+    adminCategories.value = payload as AdminCategoryListItem[]
+    const currentSlug = managedCategorySlug.value
+    const stillExists = currentSlug
+      ? adminLatestCategories.value.some((entry) => entry.slug === currentSlug)
+      : false
+    const fallback = adminLatestCategories.value[0]
+    managedCategorySlug.value = stillExists ? currentSlug : fallback?.slug ?? ''
+
+    if (managedCategorySlug.value) {
+      await loadManagedCategory(managedCategorySlug.value)
+    } else {
+      managedCategoryDetail.value = null
+      managedBaseItems.value = []
+      managedEditedItems.value = []
+    }
+  } finally {
+    loadingAdminCategories.value = false
+  }
+}
+
+const loadManagedCategory = async (slug: string) => {
+  const detail = await fetchCategoryDetail(slug)
+  if (!detail) {
+    throw new Error('Could not load selected category')
+  }
+
+  managedCategorySlug.value = slug
+  managedCategoryDetail.value = detail
+  const itemNames = detail.items
+    .slice()
+    .sort((a, b) => a.display_order - b.display_order)
+    .map((item) => item.name)
+  managedBaseItems.value = itemNames
+  managedEditedItems.value = [...itemNames]
+}
+
 const createCategory = async () => {
   const name = newCategoryName.value.trim()
   const slug = newCategorySlug.value.trim()
   const description = newCategoryDescription.value.trim()
+  const items = newCategoryItems.value.map((item) => item.trim()).filter((item) => item.length > 0)
   if (!name || !slug) {
     adminError.value = 'Category name and slug are required'
+    return
+  }
+  if (items.length < 2) {
+    adminError.value = 'Enter at least two items'
+    return
+  }
+  if (new Set(items.map((item) => item.toLowerCase())).size !== items.length) {
+    adminError.value = 'Items must be unique'
     return
   }
 
@@ -415,6 +504,7 @@ const createCategory = async () => {
         name,
         slug,
         description: description.length > 0 ? description : null,
+        items,
       }),
     })
 
@@ -427,13 +517,15 @@ const createCategory = async () => {
     newCategoryName.value = ''
     newCategorySlug.value = ''
     newCategoryDescription.value = ''
+    newCategoryItems.value = ['', '']
     await fetchCategories()
+    await fetchAdminCategories()
 
     if (payload.slug) {
       await selectCategory(payload.slug)
     }
-    if (payload.id) {
-      itemCategoryId.value = payload.id
+    if (payload.slug) {
+      await loadManagedCategory(payload.slug)
     }
   } catch (err) {
     adminError.value = err instanceof Error ? err.message : 'Unknown error'
@@ -442,66 +534,63 @@ const createCategory = async () => {
   }
 }
 
-const addItemsToCategory = async () => {
-  if (!itemCategoryId.value) {
-    adminError.value = 'Choose a category first'
+const addItemField = () => {
+  newCategoryItems.value = [...newCategoryItems.value, '']
+}
+
+const removeItemField = (index: number) => {
+  if (newCategoryItems.value.length <= 2) {
     return
   }
+  newCategoryItems.value = newCategoryItems.value.filter((_, itemIndex) => itemIndex !== index)
+}
 
-  const items = newItemsText.value
-    .split(/\n|,/) 
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-
-  if (items.length === 0) {
-    adminError.value = 'Enter at least one item'
+const onManagedCategoryChange = async () => {
+  if (!managedCategorySlug.value) {
+    managedCategoryDetail.value = null
+    managedBaseItems.value = []
+    managedEditedItems.value = []
     return
   }
-
-  addingItems.value = true
-  adminError.value = null
-  adminMessage.value = null
   try {
-    const response = await fetch(`${apiBase}/admin/categories/${itemCategoryId.value}/items`, {
-      method: 'POST',
-      headers: getAdminHeaders(),
-      body: JSON.stringify({ items }),
-    })
-
-    const payload = (await response.json()) as
-      | { detail?: unknown }
-      | Array<{ id: number; name: string }>
-    if (!response.ok) {
-      throw new Error(formatApiError(payload, `Could not add items (${response.status})`))
-    }
-
-    adminMessage.value = `Added ${items.length} item${items.length === 1 ? '' : 's'}`
-    newItemsText.value = ''
-    await fetchCategories()
-
-    if (category.value && category.value.id === itemCategoryId.value && selectedSlug.value) {
-      await selectCategory(selectedSlug.value)
-    }
+    adminError.value = null
+    await loadManagedCategory(managedCategorySlug.value)
   } catch (err) {
     adminError.value = err instanceof Error ? err.message : 'Unknown error'
-  } finally {
-    addingItems.value = false
   }
 }
 
-const createCategoryVersion = async () => {
-  const slug = versionCategorySlug.value.trim()
-  const newItems = versionNewItemsText.value
-    .split(/\n|,/) 
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-
-  if (!slug) {
-    adminError.value = 'Choose a category to version'
+const addManagedItem = () => {
+  const itemName = managedNewItem.value.trim()
+  if (!itemName) {
+    adminError.value = 'Enter an item name'
     return
   }
-  if (newItems.length === 0) {
-    adminError.value = 'Enter at least one new item for the next version'
+  const existing = new Set(managedEditedItems.value.map((item) => item.toLowerCase()))
+  if (existing.has(itemName.toLowerCase())) {
+    adminError.value = 'Item already exists in this version'
+    return
+  }
+  managedEditedItems.value = [...managedEditedItems.value, itemName]
+  managedNewItem.value = ''
+  adminError.value = null
+}
+
+const removeManagedItem = (index: number) => {
+  managedEditedItems.value = managedEditedItems.value.filter((_, itemIndex) => itemIndex !== index)
+}
+
+const publishManagedVersion = async () => {
+  if (!managedCategoryDetail.value) {
+    adminError.value = 'Choose a category first'
+    return
+  }
+  if (managedEditedItems.value.length < 2) {
+    adminError.value = 'A category version needs at least two items'
+    return
+  }
+  if (!hasManagedChanges.value) {
+    adminError.value = 'No item changes to publish'
     return
   }
 
@@ -509,20 +598,25 @@ const createCategoryVersion = async () => {
   adminError.value = null
   adminMessage.value = null
   try {
-    const response = await fetch(`${apiBase}/admin/categories/${slug}/versions`, {
+    const response = await fetch(`${apiBase}/admin/categories/${managedCategoryDetail.value.slug}/versions`, {
       method: 'POST',
       headers: getAdminHeaders(),
-      body: JSON.stringify({ new_items: newItems }),
+      body: JSON.stringify({
+        items: managedEditedItems.value,
+        description: managedCategoryDetail.value.description,
+      }),
     })
     const payload = (await response.json()) as { detail?: unknown; version_number?: number }
     if (!response.ok) {
-      throw new Error(formatApiError(payload, `Could not create category version (${response.status})`))
+      throw new Error(formatApiError(payload, `Could not publish new version (${response.status})`))
     }
 
-    adminMessage.value = `Created ${slug} v${payload.version_number ?? '?'}`
-    versionNewItemsText.value = ''
+    adminMessage.value = `Published ${managedCategoryDetail.value.slug} v${payload.version_number ?? '?'}`
     await fetchCategories()
-    await selectCategory(slug)
+    await fetchAdminCategories()
+    if (selectedSlug.value === managedCategoryDetail.value.slug) {
+      await selectCategory(managedCategoryDetail.value.slug)
+    }
   } catch (err) {
     adminError.value = err instanceof Error ? err.message : 'Unknown error'
   } finally {
@@ -675,6 +769,13 @@ onMounted(async () => {
   anonId.value = getOrCreateAnonId()
   loadSubmittedCategoryIds()
   await Promise.all([fetchCategories(), initializeAdminSession()])
+  if (isAdminView) {
+    try {
+      await fetchAdminCategories()
+    } catch (err) {
+      adminError.value = err instanceof Error ? err.message : 'Unknown error'
+    }
+  }
 })
 </script>
 
@@ -806,7 +907,7 @@ onMounted(async () => {
 
       <div class="admin-grid">
         <article class="admin-card">
-          <h3>Create Category</h3>
+          <h3>Create Category + Items</h3>
           <label class="field-label" for="new-category-name">Name</label>
           <input id="new-category-name" v-model="newCategoryName" class="text-input" type="text" />
 
@@ -821,43 +922,88 @@ onMounted(async () => {
             rows="3"
           />
 
+          <label class="field-label">Items</label>
+          <div class="admin-stack">
+            <div v-for="(itemDraft, index) in newCategoryItems" :key="`new-item-${index}`" class="admin-inline-row">
+              <input
+                :value="itemDraft"
+                class="text-input admin-inline-input"
+                type="text"
+                :placeholder="`Item ${index + 1}`"
+                @input="newCategoryItems[index] = ($event.target as HTMLInputElement).value"
+              />
+              <button
+                class="secondary small"
+                type="button"
+                :disabled="newCategoryItems.length <= 2"
+                @click="removeItemField(index)"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+          <button class="secondary small" type="button" @click="addItemField">+ Add Item</button>
+
           <button class="secondary" :disabled="creatingCategory || !hasAdminAccess" @click="createCategory">
             {{ creatingCategory ? 'Creating…' : 'Create Category' }}
           </button>
         </article>
 
         <article class="admin-card">
-          <h3>Add Items</h3>
-          <label class="field-label" for="item-category-select">Category</label>
-          <select id="item-category-select" v-model.number="itemCategoryId" class="select">
-            <option v-for="entry in categories" :key="entry.id" :value="entry.id">
-              {{ entry.name }} v{{ entry.version_number }}
-            </option>
-          </select>
+          <div class="admin-card-title-row">
+            <h3>Edit Items and Publish New Version</h3>
+            <button class="secondary small" type="button" :disabled="loadingAdminCategories" @click="fetchAdminCategories">
+              {{ loadingAdminCategories ? 'Refreshing…' : 'Refresh' }}
+            </button>
+          </div>
 
-          <label class="field-label" for="new-items">Items (comma or newline separated)</label>
-          <textarea id="new-items" v-model="newItemsText" class="text-input" rows="5" />
-
-          <button class="secondary" :disabled="addingItems || !hasAdminAccess" @click="addItemsToCategory">
-            {{ addingItems ? 'Adding…' : 'Add Items' }}
-          </button>
-        </article>
-
-        <article class="admin-card">
-          <h3>Publish New Version</h3>
-          <label class="field-label" for="version-category-select">Category</label>
-          <select id="version-category-select" v-model="versionCategorySlug" class="select">
-            <option v-for="entry in categories" :key="`version-${entry.slug}`" :value="entry.slug">
+          <label class="field-label" for="admin-category-select">Category</label>
+          <select
+            id="admin-category-select"
+            v-model="managedCategorySlug"
+            class="select"
+            :disabled="loadingAdminCategories || adminLatestCategories.length === 0"
+            @change="onManagedCategoryChange"
+          >
+            <option v-for="entry in adminLatestCategories" :key="entry.slug" :value="entry.slug">
               {{ entry.name }} (latest v{{ entry.version_number }})
             </option>
           </select>
 
-          <label class="field-label" for="new-version-items">New items (comma or newline separated)</label>
-          <textarea id="new-version-items" v-model="versionNewItemsText" class="text-input" rows="4" />
+          <template v-if="managedCategoryDetail">
+            <p class="panel-detail">
+              Editing <strong>{{ managedCategoryDetail.slug }}</strong> from v{{ managedCategoryDetail.version_number }}.
+              Changes here are local until you publish.
+            </p>
 
-          <button class="secondary" :disabled="creatingVersion || !hasAdminAccess" @click="createCategoryVersion">
-            {{ creatingVersion ? 'Publishing…' : 'Publish New Version' }}
-          </button>
+            <label class="field-label" for="admin-new-item">Add Item</label>
+            <div class="admin-inline-row">
+              <input id="admin-new-item" v-model="managedNewItem" class="text-input admin-inline-input" type="text" />
+              <button class="secondary" :disabled="!hasAdminAccess" @click="addManagedItem">
+                Add
+              </button>
+            </div>
+
+            <label class="field-label">Items for Next Version</label>
+            <div class="admin-stack">
+              <div v-for="(itemName, index) in managedEditedItems" :key="`${managedCategorySlug}-${itemName}-${index}`" class="admin-inline-row">
+                <input :value="itemName" class="text-input admin-inline-input" type="text" disabled />
+                <button
+                  class="secondary small danger"
+                  :disabled="!hasAdminAccess"
+                  @click="removeManagedItem(index)"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            <button class="secondary" :disabled="creatingVersion || !hasAdminAccess || !hasManagedChanges" @click="publishManagedVersion">
+              {{ creatingVersion ? 'Publishing…' : 'Publish New Version' }}
+            </button>
+          </template>
+
+          <p v-else class="panel-detail">No categories yet. Create one first.</p>
         </article>
       </div>
 

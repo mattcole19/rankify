@@ -78,6 +78,7 @@ class AdminCreateCategoryRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=2_000)
+    items: list[str] = Field(min_length=2, max_length=200)
 
     @field_validator('name', 'slug', mode='before')
     @classmethod
@@ -91,6 +92,16 @@ class AdminCreateCategoryRequest(BaseModel):
             raise ValueError('slug must be lowercase letters, numbers, and dashes only')
         return value
 
+    @field_validator('items')
+    @classmethod
+    def _validate_items(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value]
+        if any(not item for item in cleaned):
+            raise ValueError('item names must not be empty')
+        if len({item.lower() for item in cleaned}) != len(cleaned):
+            raise ValueError('item names must be unique within the request')
+        return cleaned
+
 
 class AdminCategoryResponse(BaseModel):
     id: int
@@ -99,6 +110,38 @@ class AdminCategoryResponse(BaseModel):
     description: str | None
     version_number: int
     status: str
+
+
+class AdminCategoryDetailResponse(AdminCategoryResponse):
+    items: list[ItemOut]
+
+
+class AdminCategoryListItem(BaseModel):
+    id: int
+    slug: str
+    name: str
+    version_number: int
+    status: str
+    item_count: int
+
+
+class AdminUpdateCategoryRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=2_000)
+
+    @field_validator('name', mode='before')
+    @classmethod
+    def _trim_name(cls, value: str) -> str:
+        return value.strip()
+
+
+class AdminUpdateItemRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+    @field_validator('name', mode='before')
+    @classmethod
+    def _trim_name(cls, value: str) -> str:
+        return value.strip()
 
 
 class AdminAddCategoryItemsRequest(BaseModel):
@@ -116,12 +159,12 @@ class AdminAddCategoryItemsRequest(BaseModel):
 
 
 class AdminCreateCategoryVersionRequest(BaseModel):
-    new_items: list[str] = Field(min_length=1, max_length=200)
+    items: list[str] = Field(min_length=2, max_length=200)
     description: str | None = Field(default=None, max_length=2_000)
 
-    @field_validator('new_items')
+    @field_validator('items')
     @classmethod
-    def _validate_new_items(cls, value: list[str]) -> list[str]:
+    def _validate_items(cls, value: list[str]) -> list[str]:
         cleaned = [item.strip() for item in value]
         if any(not item for item in cleaned):
             raise ValueError('item names must not be empty')
