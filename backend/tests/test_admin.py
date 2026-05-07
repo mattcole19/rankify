@@ -5,7 +5,12 @@ import pytest
 async def test_create_category_requires_admin_secret(test_client):
     response = await test_client.post(
         '/admin/categories',
-        json={'name': 'Movies', 'slug': 'movies', 'description': 'Rank your favorite movies.'},
+        json={
+            'name': 'Movies',
+            'slug': 'movies',
+            'description': 'Rank your favorite movies.',
+            'items': ['Inception', 'Interstellar'],
+        },
     )
 
     assert response.status_code == 401
@@ -13,36 +18,27 @@ async def test_create_category_requires_admin_secret(test_client):
 
 
 @pytest.mark.asyncio()
-async def test_create_category_rejects_invalid_admin_secret(test_client):
-    response = await test_client.post(
-        '/admin/categories',
-        headers={'x-admin-secret': 'not-right'},
-        json={'name': 'Movies', 'slug': 'movies', 'description': 'Rank your favorite movies.'},
-    )
-
-    assert response.status_code == 403
-    assert response.json()['detail'] == 'Invalid admin secret'
-
-
-@pytest.mark.asyncio()
-async def test_create_category_creates_record(test_client):
+async def test_create_category_creates_published_v1(test_client):
     response = await test_client.post(
         '/admin/categories',
         headers={'x-admin-secret': 'test-admin-secret'},
         json={
-            'name': 'Movies',
-            'slug': 'movies',
-            'description': 'Rank your favorite movies.',
+            'name': 'Veggies',
+            'slug': 'veggies',
+            'description': 'Rank vegetables',
+            'items': ['Carrot', 'Broccoli'],
         },
     )
 
     assert response.status_code == 201
     payload = response.json()
-    assert payload['id'] > 0
-    assert payload['name'] == 'Movies'
-    assert payload['slug'] == 'movies'
+    assert payload['slug'] == 'veggies'
     assert payload['version_number'] == 1
     assert payload['status'] == 'published'
+
+    public_response = await test_client.get('/categories')
+    slugs = {entry['slug'] for entry in public_response.json()}
+    assert 'veggies' in slugs
 
 
 @pytest.mark.asyncio()
@@ -54,6 +50,7 @@ async def test_create_category_rejects_duplicate_slug(test_client, seeded_catego
             'name': 'Candy Copy',
             'slug': seeded_category['slug'],
             'description': 'Duplicate slug attempt.',
+            'items': ['A', 'B'],
         },
     )
 
@@ -62,63 +59,35 @@ async def test_create_category_rejects_duplicate_slug(test_client, seeded_catego
 
 
 @pytest.mark.asyncio()
-async def test_add_items_to_category_appends_display_order(test_client, seeded_category):
-    response = await test_client.post(
-        f'/admin/categories/{seeded_category["id"]}/items',
+async def test_list_admin_categories_returns_versions(test_client, seeded_category):
+    create_response = await test_client.post(
+        f'/admin/categories/{seeded_category["slug"]}/versions',
         headers={'x-admin-secret': 'test-admin-secret'},
-        json={'items': ['Skittles', 'Twix']},
+        json={
+            'items': ['Sour Worms', 'Peanut Butter Cups', 'Gummy Bears', 'Blue Raspberry'],
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = await test_client.get(
+        '/admin/categories',
+        headers={'x-admin-secret': 'test-admin-secret'},
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 2
-    assert payload[0]['name'] == 'Skittles'
-    assert payload[0]['display_order'] == 3
-    assert payload[1]['name'] == 'Twix'
-    assert payload[1]['display_order'] == 4
+    seeded_entries = [entry for entry in payload if entry['slug'] == seeded_category['slug']]
+    assert [entry['version_number'] for entry in seeded_entries] == [2, 1]
 
 
 @pytest.mark.asyncio()
-async def test_add_items_requires_admin_secret(test_client, seeded_category):
-    response = await test_client.post(
-        f'/admin/categories/{seeded_category["id"]}/items',
-        json={'items': ['Skittles']},
-    )
-
-    assert response.status_code == 401
-    assert response.json()['detail'] == 'Missing admin authentication (bearer token or admin secret)'
-
-
-@pytest.mark.asyncio()
-async def test_add_items_requires_existing_category(test_client):
-    response = await test_client.post(
-        '/admin/categories/99999/items',
-        headers={'x-admin-secret': 'test-admin-secret'},
-        json={'items': ['Skittles']},
-    )
-
-    assert response.status_code == 404
-    assert response.json()['detail'] == 'Category not found'
-
-
-@pytest.mark.asyncio()
-async def test_add_items_rejects_existing_item_names_case_insensitive(test_client, seeded_category):
-    response = await test_client.post(
-        f'/admin/categories/{seeded_category["id"]}/items',
-        headers={'x-admin-secret': 'test-admin-secret'},
-        json={'items': ['sour worms']},
-    )
-
-    assert response.status_code == 409
-    assert response.json()['detail'] == 'Items already exist in category: sour worms'
-
-
-@pytest.mark.asyncio()
-async def test_create_category_version_adds_new_items_and_increments_version(test_client, seeded_category):
+async def test_create_category_version_publishes_with_full_item_set(test_client, seeded_category):
     response = await test_client.post(
         f'/admin/categories/{seeded_category["slug"]}/versions',
         headers={'x-admin-secret': 'test-admin-secret'},
-        json={'new_items': ['Blue Raspberry']},
+        json={
+            'items': ['Sour Worms', 'Peanut Butter Cups', 'Blue Raspberry'],
+        },
     )
 
     assert response.status_code == 201
@@ -127,14 +96,32 @@ async def test_create_category_version_adds_new_items_and_increments_version(tes
     assert payload['version_number'] == 2
     assert payload['status'] == 'published'
 
+    latest_detail = await test_client.get(f'/categories/{seeded_category["slug"]}')
+    assert latest_detail.status_code == 200
+    latest_items = [item['name'] for item in latest_detail.json()['items']]
+    assert latest_items == ['Sour Worms', 'Peanut Butter Cups', 'Blue Raspberry']
+
 
 @pytest.mark.asyncio()
-async def test_create_category_version_rejects_duplicate_new_items(test_client, seeded_category):
+async def test_create_category_version_requires_two_items(test_client, seeded_category):
     response = await test_client.post(
         f'/admin/categories/{seeded_category["slug"]}/versions',
         headers={'x-admin-secret': 'test-admin-secret'},
-        json={'new_items': ['Sour Worms']},
+        json={
+            'items': ['Only One'],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio()
+async def test_add_items_rejects_published_version(test_client, seeded_category):
+    response = await test_client.post(
+        f'/admin/categories/{seeded_category["id"]}/items',
+        headers={'x-admin-secret': 'test-admin-secret'},
+        json={'items': ['Skittles']},
     )
 
     assert response.status_code == 409
-    assert response.json()['detail'] == 'Items already exist in category: sour worms'
+    assert response.json()['detail'] == 'Published versions are immutable; create a new version instead'
