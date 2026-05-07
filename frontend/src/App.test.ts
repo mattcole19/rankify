@@ -101,7 +101,7 @@ describe('App', () => {
     expect(screen.getByText(/Rank fast. Compare with everyone./i)).toBeInTheDocument()
 
     await waitFor(() => {
-      expect(screen.getByText('Test Candy v1 (3 items)')).toBeInTheDocument()
+      expect(screen.getByText('Test Candy (3 items)')).toBeInTheDocument()
     })
 
     await userEvent.click(screen.getByRole('button', { name: 'Submit Ranking' }))

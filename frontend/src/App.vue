@@ -73,6 +73,9 @@ const rankingItems = ref<CategoryItem[]>([])
 const communityRanking = ref<CommunityRanking | null>(null)
 const categoryVersions = ref<CategoryVersionSummary[]>([])
 const selectedCommunityVersion = ref<number | null>(null)
+const communityVersionNewItems = ref<Set<string>>(new Set())
+const communityVersionDiffSummary = ref<string | null>(null)
+const categoryVersionItemsCache = ref<Record<string, string[]>>({})
 const draggedIndex = ref<number | null>(null)
 const adminSecret = ref(initialAdminSecret)
 const adminError = ref<string | null>(null)
@@ -279,6 +282,64 @@ const fetchCategoryVersions = async (slug: string) => {
   categoryVersions.value = (await response.json()) as CategoryVersionSummary[]
 }
 
+const fetchCategoryDetail = async (slug: string, version?: number): Promise<CategoryDetail | null> => {
+  const versionQuery = version ? `?version=${version}` : ''
+  const response = await fetch(`${apiBase}/categories/${slug}${versionQuery}`)
+  if (!response.ok) {
+    return null
+  }
+  return (await response.json()) as CategoryDetail
+}
+
+const getCategoryItemsForVersion = async (slug: string, version: number): Promise<string[]> => {
+  const cacheKey = `${slug}:${version}`
+  const cached = categoryVersionItemsCache.value[cacheKey]
+  if (cached) {
+    return cached
+  }
+  const detail = await fetchCategoryDetail(slug, version)
+  const itemNames = detail ? detail.items.map((item) => item.name) : []
+  categoryVersionItemsCache.value = {
+    ...categoryVersionItemsCache.value,
+    [cacheKey]: itemNames,
+  }
+  return itemNames
+}
+
+const isCommunityNewItem = (itemName: string): boolean => communityVersionNewItems.value.has(itemName)
+
+const updateCommunityVersionDiff = async () => {
+  if (!selectedSlug.value || selectedCommunityVersion.value === null) {
+    communityVersionNewItems.value = new Set()
+    communityVersionDiffSummary.value = null
+    return
+  }
+
+  const currentVersion = selectedCommunityVersion.value
+  const previousVersion = categoryVersions.value
+    .map((entry) => entry.version_number)
+    .filter((entryVersion) => entryVersion < currentVersion)
+    .sort((a, b) => b - a)[0]
+
+  if (!previousVersion) {
+    communityVersionNewItems.value = new Set()
+    communityVersionDiffSummary.value = null
+    return
+  }
+
+  const currentItems = await getCategoryItemsForVersion(selectedSlug.value, currentVersion)
+  const previousItems = await getCategoryItemsForVersion(selectedSlug.value, previousVersion)
+  const previousLower = new Set(previousItems.map((item) => item.toLowerCase()))
+  const newItems = currentItems.filter((item) => !previousLower.has(item.toLowerCase()))
+
+  communityVersionNewItems.value = new Set(newItems)
+  if (newItems.length > 0) {
+    communityVersionDiffSummary.value = `New in v${currentVersion}: ${newItems.join(', ')}`
+  } else {
+    communityVersionDiffSummary.value = `No new items compared with v${previousVersion}`
+  }
+}
+
 const initializeAdminSession = async () => {
   if (!supabaseClient || !isAdminView) {
     return
@@ -473,19 +534,20 @@ const createCategoryVersion = async () => {
 const selectCategory = async (slug: string, version?: number) => {
   selectedSlug.value = slug
   communityRanking.value = null
+  communityVersionNewItems.value = new Set()
+  communityVersionDiffSummary.value = null
   error.value = null
 
-  const versionQuery = version ? `?version=${version}` : ''
-  const response = await fetch(`${apiBase}/categories/${slug}${versionQuery}`)
-  if (!response.ok) {
-    error.value = `Unable to load category (${response.status})`
+  const payload = await fetchCategoryDetail(slug, version)
+  if (!payload) {
+    error.value = 'Unable to load category'
     return
   }
 
-  const payload = (await response.json()) as CategoryDetail
   category.value = payload
   if (version === undefined) {
     await fetchCategoryVersions(slug)
+    categoryVersionItemsCache.value = {}
   }
   selectedCommunityVersion.value = payload.version_number
   const canonicalOrder = [...payload.items].sort((a, b) => a.display_order - b.display_order)
@@ -550,6 +612,7 @@ const loadCommunityRanking = async (version?: number) => {
 
   communityRanking.value = (await response.json()) as CommunityRanking
   selectedCommunityVersion.value = communityRanking.value.category_version_number
+  await updateCommunityVersionDiff()
 }
 
 const getCommunityScorePercent = (averageRank: number | null): number => {
@@ -636,7 +699,7 @@ onMounted(async () => {
         @change="selectCategory(($event.target as HTMLSelectElement).value)"
       >
         <option v-for="entry in categories" :key="entry.slug" :value="entry.slug">
-          {{ entry.name }} v{{ entry.version_number }} ({{ entry.item_count }} items)
+          {{ entry.name }} ({{ entry.item_count }} items)
         </option>
       </select>
 
@@ -698,11 +761,15 @@ onMounted(async () => {
             v{{ entry.version_number }} ({{ entry.submission_count }} submissions)
           </option>
         </select>
+        <p v-if="communityVersionDiffSummary" class="version-diff-note">{{ communityVersionDiffSummary }}</p>
       </div>
       <ol class="community-list">
         <li v-for="entry in communityRanking.items" :key="entry.item_id">
           <div class="community-item-top">
-            <span class="community-item-name">{{ entry.item_name }}</span>
+            <span class="community-item-name"
+              >{{ entry.item_name }}
+              <span v-if="isCommunityNewItem(entry.item_name)" class="new-item-pill">New</span></span
+            >
             <span v-if="entry.average_rank" class="community-item-metric"
               >avg #{{ entry.average_rank.toFixed(2) }}</span
             >
