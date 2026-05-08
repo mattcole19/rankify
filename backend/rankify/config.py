@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     sentry_traces_sample_rate: Annotated[
         float, Field(alias='SENTRY_TRACES_SAMPLE_RATE')
     ] = 0.0
+    observability_slow_request_ms: Annotated[
+        int, Field(alias='OBSERVABILITY_SLOW_REQUEST_MS')
+    ] = 400
+    observability_slow_db_query_ms: Annotated[
+        int, Field(alias='OBSERVABILITY_SLOW_DB_QUERY_MS')
+    ] = 100
 
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
@@ -56,6 +62,13 @@ class Settings(BaseSettings):
     def _validate_sentry_traces_sample_rate(cls, value: float) -> float:
         if value < 0 or value > 1:
             raise ValueError('SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1')
+        return value
+
+    @field_validator('observability_slow_request_ms', 'observability_slow_db_query_ms')
+    @classmethod
+    def _validate_positive_thresholds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError('observability thresholds must be greater than 0')
         return value
 
     @property

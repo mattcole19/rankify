@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from rankify.config import Settings
+from rankify.observability import instrument_sqlalchemy_engine
 
 engine: AsyncEngine | None = None
 session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -19,6 +20,10 @@ session_factory: async_sessionmaker[AsyncSession] | None = None
 async def create_engine(settings: Settings) -> None:
     global engine, session_factory
     engine = create_async_engine(settings.database_url, echo=False)
+    instrument_sqlalchemy_engine(
+        engine,
+        slow_query_ms=settings.observability_slow_db_query_ms,
+    )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 
